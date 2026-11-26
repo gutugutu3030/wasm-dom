@@ -260,7 +260,7 @@ suspend fun decodeImage(source: Blob): ImageBitmap? {
  * `wheel` / `touchstart` は `window` / `document` に貼ると**既定が `passive: true`** で、
  * `preventDefault()` が黙られる（Chrome / Safari とも）。ブラウザのピンチを抑止する
  * [app.konpeto.konpetomoide.webapp.dom.blockBrowserPinch] は `{ passive: false }` が無いと効かない
- * （`web/src/editor/gestures.ts` はオプションオブジェクトを渡している）。
+ * （JS 実装はオプションオブジェクトを渡していた）。
  */
 external interface EventListenerOptions : JsAny {
     /** `false` にすると `preventDefault()` が効くようになる。 */

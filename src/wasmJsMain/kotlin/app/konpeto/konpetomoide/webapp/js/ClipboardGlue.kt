@@ -12,15 +12,14 @@ import kotlin.js.JsArray
  *
  * `kotlinx-browser` 0.5.0 は `Clipboard.read()` を **`Promise<DataTransfer>` と宣言している**が、
  * 実物は `Promise<ClipboardItem[]>`（型が違う）。`ClipboardItem` は未宣言。なので
- * **呼び出し元側を言い直す**（`js/DomGlue.kt` の `Canvas2dProvider` と同じ手・仕様 §8.2 J6〜J9）。
+ * **呼び出し元側を言い直す**（`DomGlue.kt` の `Canvas2dProvider` と同じ手）。
  *
  * 非安全文脈（LAN `http://192.168.x.x`）では `navigator.clipboard` **自体が `undefined`** なので、
  * 実在は `JsAny?` で宣言して `null` として落ちるのを見る（`js/JsGlue.kt` の実測）。
  * **メソッドも `JsAny?` で見てから呼ぶ**（無いものに `read()` を呼ぶと `TypeError`）。
  *
- * **JSON を割らない**（K5-1・D-95）。型の列は生 JSON のまま返して `KonpeJson` での decode はアプリ側
- * （`editor/Clipboard.kt`）に置く。このモジュールが `shared` と `kotlinx-serialization` を知らないまま
- * 単体で立つようにするため（`doc/plan-k5-1-wasm-dom-module.md`）
+ * **JSON を割らない**。型の列は生 JSON のまま返して、decode は呼び出し側に置く
+ * （この土台は JSON の意味も `kotlinx-serialization` も知らないまま単体で立つ）。
  */
 
 /** `navigator` を、クリップボードが**有るか無いかを見る**口。 */
@@ -97,8 +96,8 @@ suspend fun readClipboardItems(): List<ClipboardItemLike> {
  * 項目が持てる MIME 型の列を**生 JSON のまま**返す（`'["image/png","text/plain"]'` の形）。
  *
  * wasm 側は JS 配列の要素を 1 個ずつ読めない（`js/IdbGlue.kt` の実測）ので `JSON.stringify` して
- * 1 本の文字列で受ける。**ここで割らない**のが要点で、`KonpeJson` を引くとこのモジュールが
- * `shared` を知るになってしまう（K5-1・D-95）。decode は `editor/Clipboard.kt`
+ * 1 本の文字列で受ける。**ここで割らない**のが要点で、JSON ライブラリを引くとこの土台が
+ * 呼び出し側の型と保存形式を知ってしまう。decode は呼び出し側の仕事
  *
  * @param item 引く項目
  * @return 型の JSON 文字列。取れなければ `null`（呼び出し側は空の列として扱う）

@@ -7,10 +7,10 @@ import kotlin.js.JsAny
 import kotlin.js.JsArray
 
 /*
- * wasm から JS を直接叩く**唯一**の場所（K0-2・`doc/plan-kmp-local-rewrite.md`）。
+ * wasm から JS を直接叩く**唯一**の場所。
  *
- * 置くものは `kotlinx-browser` が宣言していないものだけ。散らすと W3 と同じ轍を踏む
- * （グルーと成果物の版本ズレ・`doc/kb-wasm-interop.md`）。
+ * 置くものは `kotlinx-browser` が宣言していないものだけ。**1 箇所に寄せる** ―― 橋が散ると
+ * 「どの宣言がどこにあるか」が追えなくなる（`external` 宣言の実測はここに書く）。
  *
  * ## Kotlin 2.4.21 / wasmJs の実測（2026-11-21）
  *
@@ -69,7 +69,8 @@ external interface MaybeSecureContext : JsAny {
  * devtools へ 1 行出す（`kotlinx-browser` は `console` を宣言していない）。
  *
  * **画面を止めないための記録**に使う。保存層は失敗を `null` に丸めるので、切り分けの手がかりが
- * 画面に出ない。だからといって例外を投げると「保存の失敗でアプリが止まる」になる（§S2-5）
+ * 画面に出ない。だからといって例外を投げると「保存の失敗でアプリが止まる」になる
+ * （**呼び出し側は失敗を `null` / 空で受け取る作り**）
  *
  * @param message 出す文字
  */
@@ -139,7 +140,7 @@ fun hasGetCoalescedEvents(event: JsAny): Boolean =
     event.unsafeCast<MaybeGetCoalescedEvents>().getCoalescedEvents != null
 
 /**
- * 1 フレームにまとまって届いた中間点の個数（`web/src/editor/gestures.ts` が使っているものと同じ）。
+ * 1 フレームにまとまって届いた中間点の個数。
  *
  * @param event `pointermove` の `PointerEvent`
  * @return 個数。**非対応・例外は -1**（0 と区別する）
@@ -160,10 +161,10 @@ fun coalescedFirstClientX(event: JsAny): Int? =
     }.getOrNull()
 
 /**
- * 1 フレームにまとまって届いた中間点の client 座標（**落書きのなめらかさ**・E-7）。
+ * 1 フレームにまとまって届いた中間点の client 座標（**落書きのなめらかさ**）。
  *
  * iOS Safari は `pointermove` 1 回に数点を詰めることがあり、これを読まないとなめらかさが落ちる。
- * `web/src/editor/gestures.ts` の `coalescedPagePoints` と同じ口を Kotlin 側に置く
+ * JS 実装が読んでいた同じ口を Kotlin 側に置く
  *
  * @param event `pointermove` の `PointerEvent`
  * @return client 座標の点列（時系列順）。**非対応・空・例外は空列表**（呼び出し側がイベント本体 1 点に代用する）
@@ -192,14 +193,14 @@ private fun JsArray<JsAny>.firstOrNull(): JsAny? =
 
 /*
  * ---------------------------------------------------------------------------
- * ジェスチャが待つ口・数える口（K2-4・`web/src/editor/viewerSwipe.ts` / `stripReorder.ts` の移植）
+ * ジェスチャが待つ口・数える口（JS 実装から移植したものが使っている口）
  * ---------------------------------------------------------------------------
  *
  * `kotlinx-browser` 0.5.0 を sources jar で引いて**実在を確認**してから足している（2026-11-21）:
  *
  * - `PointerEvent` は **`org.w3c.dom.pointerevents` に在る**。ただし `clientX` / `clientY` は
  *   `MouseEvent` 由来で **`Int`**。**ブラウザズーム 150% だと JS 側は小数で渡す**（`234.66667…`。
- *   kb-kmp-webview.md §12-1 の「ズームで px が拡大される」の実測と同じ状況）ので、**座標は `Double`
+ *   ズームで px が拡大される実測と同じ状況）ので、**座標は `Double`
  *   で読む言い直しを 1 個置く**（`setPointerCapture` / `hasPointerCapture` は宣言済みなので使わない）
  * - `window.performance` は**宣言が無い**（`kotlinx.browser.performance` は unresolved・実測）。
  *   `performance.now()` は**単調増加**なので、速度計算に壁時計（`Date`）を使うとタイムゾーンや

@@ -9,13 +9,13 @@ import kotlin.js.JsAny
 /*
  * ファイルとして**書き出す**口（K2-8・S-File シーム）。
  *
- * `web/src/print/exportPng.ts` の `downloadEach` が本番で実測済みの 5 手をそのまま写す:
+ * ブラウザで実測済みの 5 手:
  * `createObjectURL` → `a[download]` → append → `click()` → 即 `remove()` → **10 秒後に revoke**。
  * 宣言は kotlinx-browser に揃っているが、**手順を書く場所が無い**と画面ごとに 5 手が duplicated になる
- * （PNG 書き出しと `.konpe` 書き出しで 1 本にする）。
+ * （書き出し経路が複数増えても 1 本で足ります）。
  *
  * **revoke のタイマは画面の後始末で消さない**: 消すと URL が永遠に残る（リークのほうが悪い）。
- * 10 秒後に自分が消すだけの自己完結したタイマなので、置いておく（`doc/kb-kmp-webview.md` §18）
+ * 10 秒後に自分が消すだけの自己完結したタイマなので、置いておく
  */
 
 /** ブラウザが書き出しを終えるのを待ってから object URL を返す時間（ms）。 */
@@ -44,10 +44,10 @@ private external interface MaybeDownload : JsAny {
 /**
  * Blob をユーザーの端末に書き出す（**1 操作 = 1 ファイル**）。
  *
- * iOS Safari は `a[download]` を連打しても 1 枚しか保存できない（`exportPng.ts` 実測）。
+ * iOS Safari は `a[download]` を連打しても 1 枚しか保存できない（実測）。
  * **複数個をまとめて出したいときは共有シート**（`js/ShareGlue.kt`）を使ってここは呼ばない
  *
- * @param name 保存されるファイル名（`shared` の `pngName` / `konpeFileName` が決めたもの）
+ * @param name 保存されるファイル名（呼び出し側が決めたもの）
  * @param blob 実体
  * @return 書き出しを開始したか。`URL` が作れない環境は false（**失敗行は呼び出し側が出す**）
  */

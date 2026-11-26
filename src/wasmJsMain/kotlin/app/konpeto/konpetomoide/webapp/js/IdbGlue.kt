@@ -20,7 +20,7 @@ import kotlin.js.JsAny
  *   型として `String` と書いて境界で変換させる**のが唯一の通り道（`kotlinx-browser` の
  *   `createElement(tagName: String)` と同じ）
  * - 同じ理由で **`JsArray` の要素を 1 個ずつ `String` で読む方法が無い**。なので**一覧の受け取りは
- *   `JSON.stringify` して 1 本の文字列で受ける**（`jsJsonStringify`。`KonpeJson` で `List<String>` に割る）
+ *   `JSON.stringify` して 1 本の文字列で受ける**（`jsJsonStringify`。**割るのは呼び出し側**）
  * - **Kotlin 側から JS のオブジェクトリテラルを書けない**（`@JsFun` はこの版本に無い）。
  *   ただし **`JSON.parse("{}")` で空オブジェクトを作ってプロパティを代入すれば作れる**（[jsJsonParse]。
  *   K1-5 で実測）。これで `{key, cachedAt, blob}` の行（TS 側と同じ形）が載せられるようになった。
@@ -227,11 +227,11 @@ external interface IdbBlobStore : JsAny {
  * （`getAllKeys()` だと `cachedAt` が読めない）
  *
  * 行に `Blob` を入れると `JSON.stringify` では `{}` になるが、**掃除は鍵と時刻しか見ないので**
- * 実体は写らない（`data/IdbPhotoCache.kt` の掃除）。TS 側は `photoId` / `variant` も行に載せていたが、
+ * 実体は写らない（掃除は呼び出し側が鍵を渡して行う）。TS 側は `photoId` / `variant` も行に載せていたが、
  * ここは鍵 `photoId:variant` から読む（余計な 2 個を持つと鍵と食い違う）
  */
 external interface PhotoRow : JsAny {
-    /** 鍵（[app.konpeto.konpetomoide.shared.storage.StorageSchema.photoCacheKey] と同じ `photoId:variant`）。 */
+    /** 鍵（`photoId:variant`）。作る側と読む側で同じ組み立てをする。 */
     var key: String
 
     /** 手元に入れた時刻（epoch ms）。**JS の number なので `Double`**（`Long` は境界を越えない）。LRU 順に使う */
@@ -333,7 +333,7 @@ fun idbFactory(): IdbFactory? =
 /**
  * リクエストの完了を待って結果を返す。
  *
- * **失敗は `null` に丸める**（`doc/kb-local-first.md` §S2-5）。IDB が開けない・書けない環境で
+ * **失敗は `null` に丸める**。IDB が開けない・書けない環境で
  * 画面に通信エラーを出さないための約束で、ここが例外を投げると「保存が失敗したアプリ」になる
  *
  * @receiver 待つリクエスト
@@ -379,7 +379,7 @@ suspend fun IdbOpenRequest.awaitDatabase(): JsAny? =
     suspendCoroutine { continuation ->
         onsuccess = { continuation.resume(runCatching { result }.getOrNull()) }
         onerror = { continuation.resume(null) }
-        // 古い version を開いたままのタブがあるとここで止まる（§S2-9）。「キャッシュが無い」で進める
+        // 古い version を開いたままのタブがあると `onblocked` で止まる。「キャッシュが無い」で進める
         onblocked = { continuation.resume(null) }
     }
 
@@ -415,8 +415,8 @@ fun IdbRequest.asRowResult(): IdbRowResult =
 /**
  * JS の値（たいてい配列）を JSON 文字列 1 本で受け取る。
  *
- * wasm 側は JS 配列の要素を Kotlin の型で 1 個ずつ読めない（上の注）。`KonpeJson` の
- * `List<String>` で割って使う
+ * wasm 側は JS 配列の要素を Kotlin の型で 1 個ずつ読めない（上の注）。**割るのは呼び出し側**
+ * （この土台は JSON の意味を知らない）
  *
  * @param value 渡す JS の値
  * @return JSON 文字列。取れなければ `null`
@@ -440,7 +440,7 @@ fun jsJsonParse(text: String): JsAny? =
  * 今の時刻（epoch ms）。
  *
  * **LRU の順はリロードを跨がないと意味が無い**ので、`TimeSource.Monotonic` ではダメで
- * JS の壁時計を見る（`kotlinx-datetime` は入れていない・依存を増やさない方針 D-8）
+ * JS の壁時計を見る（`kotlinx-datetime` は入れていない・依存を増やさない方針）
  *
  * @return epoch ms。`Date` が取れない環境は 0（＝一番古い扱い。掃除は「捨てる側」に倒れる）
  */

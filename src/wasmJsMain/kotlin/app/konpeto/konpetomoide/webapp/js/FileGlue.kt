@@ -14,9 +14,9 @@ import kotlin.io.encoding.ExperimentalEncodingApi
 import kotlin.js.JsAny
 
 /*
- * **`ByteArray ↔ Blob / File` の橋**（K2-8・S-File シームの心臓部）。
+ * **`ByteArray ↔ Blob / File` の橋**。
  *
- * `.konpe` は zip のバイト列で `shared` の書き手・読み手が往復する。手元の実体は IndexedDB の `Blob`。
+ * 使う側が扱うのは **`ByteArray`**（zip のバイト列）、手元の実体は IndexedDB の **`Blob`**。
  * **この 1 段が wasm に無い** ―― `kotlinx-browser` 0.5.0 は `Blob.arrayBuffer()` / `Blob.text()` /
  * `File.arrayBuffer()` を 1 個も宣言していない（sources jar 実測）。通れるのは `FileReader` と `fetch` と
  * `Base64` と、**外部クラスのコンストラクタが呼べるか**（未実測）だけ。
@@ -24,15 +24,16 @@ import kotlin.js.JsAny
  * ## 読み（[readBlobBytes]）
  *
  * `FileReader.readAsDataURL` → 先頭の `data:…;base64,` を落とす → `Base64.decode`。
- * `result` は宣言上 `JsAny?` で、**`JsAny` から `String` に `unsafeCast` は通らない**（kb §18-1）ので、
+ * `result` は宣言上 `JsAny?` で、**`JsAny` から `String` に `unsafeCast` は通らない**
+ * （`docs/kb-wasm-bridge.md` §B-1）ので、
  * 同じ JS オブジェクトを**文字列を読む口** [FileReaderText] として見直す（`IdbGlue` の `IdbRowResult` と同じ手）。
  * `FileReaderSync` も宣言はあるが**メインスレッドでは使えない**（Worker 限定）
  *
  * ## 書き（[blobFromBytes]）
  *
  * **型付き配列で `Blob` を直接作る手を先に試し、落ちたら data URL を `fetch` して取り戻す**。
- * 先に試す理由はメモリ: data URL は元の 5.3 倍の文字列を挟むのに対し、型付き配列は 1 倍で済む（仕様 §9.1）。
- * **効かない手の `external` は増やさない** ―― `Reflect.construct` は宣言も stdlib も無い（kb §18-3）
+ * 先に試す理由はメモリ: data URL は元の 5.3 倍の文字列を挟むのに対し、型付き配列は 1 倍で済む（実測）。
+ * **効かない手の `external` は増やさない** ―― `Reflect.construct` は宣言も stdlib も無い（実測）
  */
 
 /** data URL の先頭。 */
@@ -119,11 +120,11 @@ suspend fun blobFromBytes(
     blobFromTypedArray(bytes, mimeType) ?: blobFromDataUrl(bytes, mimeType)
 
 /**
- * 断片の列を `Blob` にする（**1 本に繋がない**・判断 D-114）。
+ * 断片の列を `Blob` にする（**1 本に繋がない**）。
  *
  * `Blob` のコンストラクタは part 配列を受け取る（[blobFromTypedArray] が 1 part でやっていること
- * そのもの）。`.konpe` の書き出しは断片のまま作れるので、ここで繋がないと **ピークが
- * `.konpe` 1 個ぶん減る**（120 MB 書き出しで 120 MB）
+ * そのもの）。断片で出せる書き出しなら、ここで繋がないと **ピークが出力 1 個ぶん減る**
+ * （120 MB 書き出しで 120 MB）
  *
  * **型付き配列の手が落ちたときだけ 1 本に繋いで** [blobFromBytes] に落とす ―― data URL の手は
  * 1 本でしか渡せないのでピークは元に戻るが、**出せないよりマシ**
@@ -178,9 +179,8 @@ private fun List<ByteArray>.joined(): ByteArray {
  * `new` に相当する口が分からない）。呼べなければ例外、**`size` が食い違っても失敗**として落とす
  * （壊れた zip を出さない）
  *
- * **`#/probe` が「どちらの手で通ったか」を出すために明かしている**。画面は
- * [blobFromBytes] だけを呼べばよい（判断 D-76）。K5-1 でアプリと別 Kotlin モジュールになったので、
- * `internal` では probe に届かない（**`public` にしているのはこの画面のためだけ**）
+ * **呼び出し側の実測画面が「どちらの手で通ったか」を出すために明かしている**。使う側は
+ * [blobFromBytes] だけを呼べばよい（**`public` にしているのはこのためだけ**）
  *
  * @param bytes 載せるバイト列
  * @param mimeType 実体の mime
@@ -214,8 +214,8 @@ suspend fun blobFromDataUrl(
     bytes: ByteArray,
     mimeType: String,
 ): Blob? {
-    // **`encodeToString` は wasm の stdlib に無い**（2.4.21 の klib を直接引いて `encodeToByteArray` のみ実測・
-    // kb §18-5）。Base64 の Alphabet は ASCII なので `ByteArray` → `String` の変換は可逆
+    // **`encodeToString` は wasm の stdlib に無い**（2.4.21 の klib を直接引いて
+    // `encodeToByteArray` のみ実測）。Base64 の Alphabet は ASCII なので `ByteArray` → `String` の変換は可逆
     val encoded = runCatching { Base64.encodeToByteArray(bytes).decodeToString() }.getOrNull() ?: return null
     return fetchBlob("$DATA_URL_PREFIX$mimeType$BASE64_MARK$encoded").takeIf { fetched -> fetched.ok }?.blob
 }
@@ -224,7 +224,8 @@ suspend fun blobFromDataUrl(
  * `FileReader.readAsDataURL` の完了を 1 回だけ待つ。
  *
  * [readBlobBytes] の中にしまいこむと **Base64 の係数**（data URL 経路のメモリピークの根拠）が
- * 測れないので、`#/probe` から見える形にしている（判断 D-76。`public` の理由は [blobFromTypedArray] と同じ）
+ * 測れないので、**呼び出し側の実測画面から見える形**にしている
+ * （`public` の理由は [blobFromTypedArray] と同じ）
  *
  * @param blob 読む実体
  * @return data URL。失敗・呼べない環境は `null`
@@ -232,7 +233,8 @@ suspend fun blobFromDataUrl(
 suspend fun readAsDataUrl(blob: Blob): String? {
     val reader = runCatching { FileReader() }.getOrNull() ?: return null
     return suspendCoroutine { continuation ->
-        // `onload` / `onerror` のどちらが来ても 1 回だけ再開する（`settled` 印・kb §13 の同じ手）
+        // `onload` / `onerror` のどちらが来ても 1 回だけ再開する（`settled` 印・
+        // `docs/kb-wasm-bridge.md` §B-4 の同じ手）
         var settled = false
         reader.onload = { _ ->
             if (!settled) {
@@ -288,7 +290,7 @@ fun base64Ratio(
  * （作れなければ `null` → 呼び出し側はダウンロードへ倒す）
  *
  * @param blob 実体
- * @param name ファイル名（`shared` の `pngName` / `konpeFileName` が決める）
+ * @param name ファイル名（呼び出し側が決める）
  * @return 作ったファイル。作れない環境は `null`
  */
 fun newFile(

@@ -1,7 +1,8 @@
 package app.konpeto.konpetomoide.webapp.reactive
 
 /*
- * 極小のシグナル / エフェクト（K2-1・`doc/kb-kmp-webview.md` §1-3）。
+ * 極小のシグナル / エフェクト。多重実行・循環・後始末の落とし穴は `docs/kb-wasm-bridge.md`
+ * §B-8〜§B-12 に実測で書いてある。
  *
  * 完コピの対象が DOM なので Compose（skiko）は採らないが、**DOM を命令的に組むと再描画の面倒を
  * 誰も見ない**。なので「値 → 反応」の 1 組だけを入れる（Solid の `createSignal` / `createMemo` /
@@ -13,10 +14,10 @@ package app.konpeto.konpetomoide.webapp.reactive
  * - `batch`（1 フレームにまとめて流す）: 代わりに**代入 1 回（1 流れ）で同じ反応は 1 回しか走らない**
  *   （[flush]）。画面の多重実行は編集画面で指の挙動に出るので、ここで止める
  * - マイクロタスクへの予約: **同期的に走る**方が DOM の見えと合って楽
- * - 例外の扱い: 反応の中で出た例外を画面に出すのは呼び出し側の責務（`App.kt`）
+ * - 例外の扱い: 反応の中で出た例外を画面に出すのは呼び出し側の責務
  *
- * **純 Kotlin**（DOM を触らない）。なので `:webapp:jvmTest` で緑が出る（判断 D-12・
- * 「テストの走らない `webapp` に純ロジックを置くと無検証になる」は K1-2 で踏んだ教訓）。
+ * **純 Kotlin**（DOM を触らない）。なので `jvmTest` が緑に出る ―― **テストの走らない
+ * ターゲットに純ロジックを置くと無検証になる**（`docs/kb-wasm-bridge.md` §B-9 に実測で書いた）。
  *
  * ## 外に出す型は `ReadSignal` / `DerivedSignal` / `MutableSignal` の 3 個だけ
  *
@@ -40,7 +41,7 @@ interface ReadSignal<out T> {
 }
 
 /**
- * [derivedOf] が返す読み取り専用シグナル（**後始末の口付き**・判断 D-120）。
+ * [derivedOf] が返す読み取り専用シグナル（**後始末の口付き**・`docs/kb-wasm-bridge.md` §B-12）。
  *
  * 派生は作った瞬間から**依存を購読し続ける**（読んでいない間も式が走る）。なので画面で作った派生は、
  * 画面を離れるときに [dispose] しないと依存を握り続ける。`effectOf` と同じ作法にする
@@ -137,7 +138,7 @@ private var activeReaction: Reaction? = null
  * **反応が入れ子で何段走っているか**（[Reaction.guarded] が数える）。
  *
  * 反応の中で signal を書くと、その書き込みが次の反応を**今の反応のスタックフレームの内側**で走らせる。
- * なので「自分が読んだ signal を書く effect」は段が伸び続ける ―― ここで検知する（判断 D-119）
+ * なので「自分が読んだ signal を書く effect」は段が伸び続ける ―― ここで検知する（`docs/kb-wasm-bridge.md` §B-10）
  */
 private var reactionDepth = 0
 
@@ -219,7 +220,7 @@ fun <R> untracked(block: () -> R): R {
  * シグナルの間の**反応 1 個**。[track] の間で読まれたシグナルを依存として集め、依存が変わると [reRun] が走る。
  *
  * 走り直し・破棄のどちらでも**前の依存を全部外す**のを忘れると、古い値の購読が残って多重実行になる
- * （`:webapp:jvmTest` の「走り直し前に後始末が走る」で見る）。
+ * （`commonTest` の「走り直し前に後始末が走る」で見る）。
  */
 internal abstract class Reaction {
     /** いま依存しているシグナル。 */
@@ -263,7 +264,8 @@ internal abstract class Reaction {
     }
 
     /**
-     * 入れ子段を数えながら [block] を走らせる（**自分で読んだ signal を書く反応を無限に走らせない**・判断 D-119）。
+     * 入れ子段を数えながら [block] を走らせる
+     * （**自分で読んだ signal を書く反応を無限に走らせない**・`docs/kb-wasm-bridge.md` §B-10）。
      *
      * 反応の中で signal を書くと、その書き込みが次の反応を今の反応の内側で走らせる（スタックが伸びる）。
      * 上限を超えたら**例外**で止める。無限ループでタブが固まるより、どの反応で止まったか出るほうがいい

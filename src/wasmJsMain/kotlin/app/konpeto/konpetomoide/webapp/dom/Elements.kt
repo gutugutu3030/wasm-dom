@@ -170,10 +170,10 @@ fun HTMLElement.appendParagraph(className: String = ""): HTMLElement =
     createElement("p", className)
 
 /**
- * 子に `a` を足す。**hash ルータなので `href = "#/albums/…"` をそのまま踏める**（JS 不要）。
+ * 子に `a` を足す。**hash ルータなら `href = "#/…"` をそのまま踏める**（JS 不要）。
  *
  * @param label リンクに出る文字
- * @param href 行き先（[app.konpeto.konpetomoide.webapp.nav.toHash] で組み立てる）
+ * @param href 行き先（`#` から始まる hash。ルータは呼び出し側が持つ）
  * @param className 付けたいクラス名（無ければ空）
  * @receiver 足す先
  * @return 作った要素
@@ -345,12 +345,12 @@ fun HTMLElement.appendNav(className: String = ""): HTMLElement =
     createElement("nav", className)
 
 /**
- * 子に `section` を足す（**設定画面の区分 `.menu-section`**・K2-8）。
+ * 子に `section` を足す（**区分の見出し付きの塊**）。
  *
  * `div` でも組めるが、`section` にすると `aria-label` で「この塊は何の設定か」が読み上げられる
- * （設定画面は 4 区分が縦に並ぶので、見出しを目で追えない人に区分の境目が伝わらない）。
- * `.menu-section + .menu-section` は CSS 側で **2 個目から自動で区切り線**が出る（区分の目印に
- * クラスを増やさない・D-44）
+ * （区分が縦に並ぶと、見出しを目で追えない人に境目が伝わらない）。`aria-label` で読む。
+ * 呼び出し側の CSS が `.menu-section + .menu-section` で **2 個目から自動で区切り線**を
+ * 出せる形にしてある（区分の目印にクラスを増やさないため）
  *
  * @param className 付けたいクラス名（無ければ空）
  * @param label 区域の名前（`aria-label`）。空は付けない
@@ -415,8 +415,7 @@ fun HTMLElement.appendStyleElement(className: String = ""): HTMLElement =
  * 箱の中に見えるところまで要素を送る（**ページをめくったときに対応するサムネイルを引き込む**）。
  *
  * `.thumb` は `touch-action: none`（長押しドラッグ＝並べ替えに取られる）なので、**サムネイル上は
- * 慣性スクロールが効かない**。めくったページを自分で見せないと「今のページが画面外」が起きる
- * （`web/src/screens/AlbumViewerScreen.tsx` と同じ理由）。
+ * 慣性スクロールが効かない**。めくったページを自分で見せないと「今のページが画面外」が起きる。
  *
  * `scrollIntoView` の options 形（`behavior` / `inline` / `block`）は `kotlinx-browser` が
  * `JsAny` しか受け取らないので、`JSON.parse` で作る（`js/IdbGlue.kt` の実測）

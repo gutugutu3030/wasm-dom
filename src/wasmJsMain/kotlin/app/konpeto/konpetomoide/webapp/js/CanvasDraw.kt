@@ -6,8 +6,8 @@ import kotlin.js.JsAny
  * canvas に**文字と経路を描く口**（K2-7・`js/CanvasText.kt` 相当の追加宣言）。
  *
  * `js/DomGlue.kt` の `Canvas2d` は縮小版生成に必要な 4 個（`fillStyle` / `fillRect` /
- * `drawImage` / `getImageData`）だけ持っていた。印刷解像度レンダ（`web/src/print/renderPage.ts`
- * に対応）はこれに加えて **19 個**必要。`kotlinx-browser` 0.5.0 は `CanvasRenderingContext2D` を
+ * `drawImage` / `getImageData`）だけ持っていた。**印刷解像度で面を描く**用途はこれに加えて
+ * **19 個**必要。`kotlinx-browser` 0.5.0 は `CanvasRenderingContext2D` を
  * 持っていないので、`unsafeCast` で言い直す（`DomGlue.kt` の `Canvas2dProvider` と同じ手）。
  *
  * 1 個の interface に集めているのは、**描画中に読む型を 2 個に割ると「どっちが今の状態か」が

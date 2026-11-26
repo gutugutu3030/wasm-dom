@@ -9,8 +9,7 @@
 # 除外リストが腐らずに「まだ生きている懸念」として残る。
 #
 # osv-scanner 2.7.1 は `ignoreUntil` を Deprecated（`effectiveUntil` へ移行）として warning を出す。
-# **親 Konpetomoide の `osv-scanner.toml` と同じキーを保つ**ためここではそのままにしている
-# （移行するときは親と子で同じコミットタイミングで揃える）
+# warning だけで監査は通るので、**キーの移行は osv-scanner を上げる日**にまとめてやる
 #
 # --- 脆弱性 ID での除外（1 件ずつ） ---
 # [[IgnoredVulns]]
@@ -27,12 +26,12 @@
 # ignoreUntil = 2027-01-31T00:00:00Z
 
 # --- ビルドツール（整形）が引く logback-core ---
-# 親 Konpetomoide で最初に出た 3 件（2026-10-30）をそのまま持ってきた。
+# 最初に出た 3 件（2026-10-30）。
 # 共通点: **logback の直列化データ受信**系（`SimpleSocketServer` / `SimpleSSLSocketServer` に
 # 外部から直列化オブジェクトを送れたときだけ効く）。このリポジトリは logback の socket server を
 # 起動しない ―― 起動するのは Gradle / ktlint だけで、ktlint はローカルの `.kt` を解析するだけ。
 # fix は logback-core 1.5.25 / 1.5.33 / 1.5.34 だが、版本を決めているのは ktlint-cli 側なので
-# ここは除外で回す。親の同じファイル（`osv-scanner.toml`）と**同じ 3 件**を揃えて保つ
+# ここは除外で回す。**ktlint を上げて解消したらこの 3 件を消す**
 [[IgnoredVulns]]
 id = "GHSA-jhq6-gfmj-v8fx"
 reason = "logback の socket server（HardenedObjectInputStream）経由のみ。本リポジトリは socket appender を起動しない。ビルド時の ktlint はローカル .kt のみ解析"

@@ -7,7 +7,8 @@ import org.w3c.dom.Window
  *
  * `kotlinx-browser` の `Window` は `visualViewport` を宣言していない（`DomGlue.kt` に書いた
  * とおり「無いものだけ必要な形で作る」対象）。キーボードで**見える範囲**を買う口はこれで、
- * iOS の実測は `doc/kb-kmp-webview.md` §6（`innerHeight` も `visualViewport` も**両方縮む**）。
+ * iOS はキーボードで `innerHeight` も `visualViewport` も**両方縮む**（実測）ので、
+ * 「見えている範囲」を区別できるのはこの口だけ。
  */
 
 /**

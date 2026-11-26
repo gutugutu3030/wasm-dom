@@ -9,17 +9,17 @@ import kotlin.js.JsArray
  * `navigator.share` / `navigator.canShare`（K2-7・S-Share シームの口）。
  *
  * `kotlinx-browser` 0.5.0 は **`share` / `canShare` / `ShareData` を 1 つも宣言していない**
- * （sources jar を全文検索して 0 件・仕様 §8.2 J1）。`external interface` + `unsafeCast` で
+ * （sources jar を全文検索して 0 件）。`external interface` + `unsafeCast` で
  * 必要な形だけ言い直す。
  *
  * 注意していること:
  *
  * - **`share` が在るだけでは足りない**（`canShare({files})` が偽のブラウザがある）。両方真のときだけ
- *   共有する（仕様 §5.2）
+ *   共有する
  * - **実在確認は `JsAny?` で宣言する**（`js/JsGlue.kt` の実測: `undefined` は `null` として落ちる）。
  *   非対応ブラウザで呼ぶと `TypeError` になるので、呼ぶ前に見る
  * - **共有シートを閉じただけ（`AbortError`）は失敗ではない**。`awaitJs` は失敗を `null` に丸めるので、
- *   名前を見る [awaitOrThrow] を使う（仕様 §8.3 の重要点）
+ *   名前を見る [awaitOrThrow] を使う（`docs/kb-wasm-bridge.md` §B-2）
  * - data の皿は `jsJsonParse("{}")`（リテラルは書けない）。**触っていない `text` / `url` は
  *   `undefined` のまま**（`null` を入れると Safari が弾く）
  */
@@ -101,7 +101,7 @@ fun hasShare(): Boolean =
     shareNavigator() != null
 
 /**
- * この並びを共有できるか（**`share` の存在だけでは不十分**・仕様 §5.2）。
+ * この並びを共有できるか（**`share` の存在だけでは不十分**）。
  *
  * @param files 共有しようとする `File` の JS 配列
  * @return 共有できるか。非対応ブラウザは `false`（→ ダウンロードへ倒す）
@@ -117,7 +117,8 @@ fun canShareFiles(files: JsArray<JsAny?>): Boolean {
  *
  * @param files 共有するファイル
  * @param title 共有シートに出す題（冊名）
- * @return 共有した枚数。**ユーザーがシートを閉じただけ（`AbortError`）は 0**（失敗ではない・仕様 §4.5）
+ * @return 共有した枚数。**ユーザーがシートを閉じただけ（`AbortError`）は 0**
+ *   （失敗ではない・`docs/kb-wasm-bridge.md` §B-2）
  * @throws ShareException 共有が失敗した（`NotAllowedError` 等）
  * @throws IllegalStateException 共有が使えない・皿を作れない（呼び出し側はダウンロードに倒す）
  */

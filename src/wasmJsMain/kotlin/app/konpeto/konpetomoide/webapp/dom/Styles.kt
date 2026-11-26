@@ -3,7 +3,7 @@ package app.konpeto.konpetomoide.webapp.dom
 import org.w3c.dom.HTMLElement
 
 /*
- * インライン style に載せるヘルパ（K2-2・`doc/kb-kmp-webview.md` §12）。
+ * インライン style に載せるヘルパ。
  *
  * `element.style.setProperty(name, value)` を使う理由は 1 つ ―― **CSS 変数（`--paper-ratio`）は
  * プロパティ代入では入らない**（`style.asDynamic()` は wasm から叩かない）。`setProperty` は
@@ -14,9 +14,8 @@ import org.w3c.dom.HTMLElement
  * CSS に数値を渡すときの書式（`50` / `0.3` / `0`）。
  *
  * Kotlin の `Double.toString()` は整数にも `.0` を付ける（`50.0%`）。CSS は両方受け取るが、
- * **既存 `web/`（:5173）と devtools で見比べたときに同じ表記の方が速い**（K1-2 の SVG `points` と
- * 同じ話。`shared` の `toPlainNumber` は `internal` なのでここでもう 1 個持つ ―― 書式が目的で、
- * 検証は `PaperStyleTest` 側が持つ）。
+ * **devtools で見比べる相手が `.0` 無しなので揃える**（SVG `points` に渡す数値と同じ話）。
+ * ここが持つのは書式だけで、用紙の計算は検証しない。
  *
  * @receiver 出す数値
  * @return 接頭の小文字表記
@@ -59,7 +58,7 @@ fun HTMLElement.setStyles(styles: Map<String, String>) {
 /**
  * `data-*` 属性を載せる（`setData("item-id", id)` → `data-item-id`）。
  *
- * **あたり判定はこの属性を実物要素に載せるのが約束**（編集画面は DOM 実寸を読む・`doc/kb-editor-gesture.md`）
+ * **あたり判定はこの属性を実物要素に載せるのが約束** ―― 判定を CSS で再現すると DOM 実寸とズレる
  *
  * @param name `data-` 以降の名前（ハイフン区切り）
  * @param value 値

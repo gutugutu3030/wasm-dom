@@ -14,10 +14,11 @@ plugins {
     id("maven-publish")
 }
 
-// ktlint のルール値。**親ビルドにいた頃はルートの `extra` から読んでいた**が、submodule は
-// それ自体がルートになるので読めない（親の外で `Cannot get property 'ktlintRules' on extra
-// properties extension` になる）。コピーして値を持つので、ルールを変えるときは
-// **ここと `.editorconfig` と親の `build.gradle.kts` の 3 箇所を揃える**（`agents.md`）
+// ktlint のルール値は**ここに自前で持つ**（`rootProject.extra` はこのリポジトリに無い。かつて
+// 別のビルドのサブモジュールだった頃はルートの `extra` から読んでいて、その外では
+// `Cannot get property 'ktlintRules' on extra properties extension` で落ちた）。
+// コピーして値を持つので、ルールを変えるときは**ここと `.editorconfig` の 2 箇所を揃える**
+// （`.editorconfig` は IDE / ktlint CLI 向けのファイル）
 val ktlintRules = mapOf(
     // 既存コードの書き方（`fun f() = 式` を同じ行に置く）に合わせる
     "ktlint_code_style" to "intellij_idea",
@@ -39,9 +40,9 @@ spotless {
         ktlint(ktlintVersion).editorConfigOverride(ktlintRules)
     }
 
-    // 単体ビルドでは**このプロジェクトがルート**なので、ビルドスクリプトも自分で洗う。
-    // target はプロジェクトディレクトリ基準なので、親の中にいる間に親の `kotlinGradle` と
-    // 二重で走ることはない（親の target は親直下の 1 階層だけ）
+    // **このプロジェクトがルート**なので、ビルドスクリプトも自分で洗う。
+    // target はプロジェクトディレクトリ基準なので、上位に別のビルドがあっても二重で走ることは
+    // ない（上の `kotlin` の target は `src/` のみ）
     kotlinGradle {
         target("*.gradle.kts")
         ktlint(ktlintVersion).editorConfigOverride(ktlintRules)
@@ -50,15 +51,15 @@ spotless {
 
 // spotless は ktlint の jar を `<project>/build/spotless-*` に解決して使う。**`clean` は他のタスクとの
 // 順序を保証しない**ので `./gradlew clean build` を 1 回で叩くと、clean がそれを消したあとに検査が走って
-// `NoClassDefFoundError: com/pinterest/ktlint/rule/engine/api/EditorConfigDefaults` になる（親で実測）。
+// `NoClassDefFoundError: com/pinterest/ktlint/rule/engine/api/EditorConfigDefaults` になる（実測）。
 // **`clean` は別に打つか `--rerun-tasks` を使う**
 tasks.matching { it.name.startsWith("spotless") }.configureEach {
     mustRunAfter("clean")
 }
 
 // ビルドツール（整形）の依存も OSV 監査に載せる。spotless は ktlint 系を実行時に独自解決するため
-// `gradle.lockfile` を通らず、放置するとこのリポジトリの網から完全に外れる（親の `audit` は
-// 親のツリーを洗うだけで submodule の中は見ない）。
+// `gradle.lockfile` を通らず、放置するとこのリポジトリの網から完全に外れる（読む側の `audit` は
+// 読む側のツリーしか洗わないので、ここは自分で洗う）。
 // 実際に使うツールと同じ座標を resolvable 設定に宣言してロックし、`audit` の再帰スキャンに載せる。
 // 再生成: `./gradlew dependencies --configuration buildTooling --write-locks`
 // （`build` だけでは `buildTooling` が解決されずロックに出ない）。ツールを上げたら実行してコミットする
@@ -77,17 +78,17 @@ dependencies {
     add(buildTooling.name, libs.ktlint.cli)
 }
 
-// 依存の脆弱性スキャン（SEC-1）用に全部の解決結果をロックする。
-// **`gradle.lockfile` は親ビルドと 1 個のファイルを共有する**（親は `:wasm-dom` として、ここは
-// ルートとして読む）。だから版本カタログを親からズラすとロックが ping-pong してどちらかが落ちる
-// ―― これが `kotlin` 版本の突合を兼ねている（`agents.md`「依存ロックと OSV 監査」）
+// 依存の脆弱性スキャン（OSV-Scanner）用に全部の解決結果をロックする。
+// `gradle.lockfile` は**このリポジトリだけのもの**（読む側は publish 済みの成果物を引くので、
+// 向こうのロックには載らない）。STRICT なので「ロックが無い」も素通ししない
+// （`agents.md`「依存ロックと OSV 監査」）
 dependencyLocking {
     lockMode = LockMode.STRICT
     lockAllConfigurations()
 }
 
 // 依存の脆弱性スキャン（OSV-Scanner）。`check` にはぶら下げない ―― osv-scanner は
-// **ネットワーク必須**なので、絡げるとオフラインの `./gradlew build` が止まる（親と同じ方針）。
+// **ネットワーク必須**なので、絡げるとオフラインの `./gradlew build` が止まる。
 // CI（`.github/workflows/ci.yml`）が明示的に 1 本走る。
 //
 // 注意: 参照は全部このブロックの中のローカル変数に置く。スクリプト最上位の `val` を
@@ -152,7 +153,7 @@ val audit by tasks.registering(Exec::class) {
 
 kotlin {
     /*
-     * Kotlin/Wasm で**実 DOM を触るための土台**（K5-1・親の `doc/plan-k5-1-wasm-dom-module.md`）。
+     * Kotlin/Wasm で**実 DOM を触るための土台**。
      *
      * 入っているのは 3 つだけ:
      *
@@ -160,29 +161,27 @@ kotlin {
      * - `async/` … 画面イベントから `suspend` を始める `launch`（`kotlinx-coroutines` は入れていない）
      * - `dom/` + `js/` … 実 DOM とブラウザ API の橋（`kotlinx-browser` が宣言していないものを自分で宣言する）
      *
-     * **アプリ本体（`:shared`）に依存しない**のが約束（判断 D-95。ドメイン・保存・`.konpe` を
-     * 知らない層にしておくと、単体リポジトリのまま使えて、2 個目のアプリが増えたときにも壁になる）。
-     * ブラウザ API の橋は wasm の口の穴が集中するので教訓を親の `doc/kb-kmp-webview.md` §13〜§18 に
-     * 集めてある。
+     * **読む側（アプリ）の型に依存しない**のが約束。ドメイン・保存・アプリ固有の形式を知らない層に
+     * しておくと、単体リポジトリのまま使えて、2 個目のアプリが増えたときにも壁になる。
+     * ブラウザ API の橋は wasm の口の穴が集中するので、**教訓は `docs/kb-wasm-bridge.md`** に集める。
      *
-     * **画面は持たない**（`#/probe` などの実測口はアプリ側・D-100）。
+     * **画面は持たない**（ブラウザで 1 手ずつ測る実測口は読む側にある）。
      *
      * KDoc でなく `/* … */` にしているのは、`wasmJs { }` が宣言ではなく関数呼び出しなので
      * ktlint の `standard:kdoc` が「block の中の KDoc は不可」として弾くため（実測）
      */
     wasmJs {
-        // wasm のテストは Karma + Chrome が要る（開発環境にヘッドレス Chrome が無いことは親で実測済）。
+        // wasm のテストは Karma + Chrome が要る（開発環境にヘッドレス Chrome が無いことは実測済）。
         // **`commonTest` を置いた瞬間にこのタスクがソースを持って走る**ので明示的に止める。
-        // 純 Kotlin の緑は下の `jvm()` に出す（判断 D-12 の続き）
+        // 純 Kotlin の緑は下の `jvm()` に出す
         browser {
             testTask {
                 enabled = false
             }
         }
-        // **ライブラリ**。`binaries.executable()` を呼ぶのはアプリ（`:webapp`）1 個だけ
+        // **ライブラリ**。`binaries.executable()` を呼ぶのは読む側（アプリ）1 個だけ
 
         // JS 相互運用（`unsafeCast` / `JsAny` / `JsArray`）は experimental 扱いで opt-in が要る
-        // （K0-2・親の `doc/kb-kmp-webview.md` §1）
         compilerOptions {
             optIn.add("kotlin.js.ExperimentalWasmJsInterop")
         }
@@ -190,11 +189,11 @@ kotlin {
 
     /*
      * **`reactive/` の純 Kotlin をテストするための `jvm` ターゲット**。wasm にはテスト実行の口が
-     * 無いので、ここに出す純ロジックが `jvmTest` 唯一の緑（D-12）。CI もこの 1 本を見る。
+     * 無いので、ここに出す純ロジックが `jvmTest` 唯一の緑。CI もこの 1 本を見る。
      *
-     * **`jvmToolchain` は使わない**（親は `jvmToolchain(25)`）。toolchain は「ビルドに使う JDK」を
-     * 固定するので、CI のランナーにその JDK を立てる手間が足される。ここでは生成するバイトコードの
-     * 目標だけ決めて（`JvmTarget.JVM_17`）、動かす JDK は Gradle を起動した JDK に任せる
+     * **`jvmToolchain` は使わない**。toolchain は「ビルドに使う JDK」を固定するので、CI のランナーに
+     * その JDK を立てる手間が足される。ここでは生成するバイトコードの目標だけ決めて
+     * （`JvmTarget.JVM_17`）、動かす JDK は Gradle を起動した JDK に任せる
      * ―― GitHub ランナーの既定（Java 17）でも、手元の Java 27 でも同じ緑になる
      */
     jvm {
@@ -206,7 +205,8 @@ kotlin {
     sourceSets {
         wasmJsMain.dependencies {
             // **`api` で出す**: 公開 API が `HTMLElement` / `Blob` / `JsAny` を返すので、`implementation` に
-            // すると読み手（アプリ本体）が型を見失う（D-96）
+            // すると読み手（アプリ本体）が型を見失う。publish された `.module` の
+            // `wasmJsApiElements` に載ることも実測で確認している
             api(libs.kotlinx.browser)
         }
 

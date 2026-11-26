@@ -6,10 +6,10 @@ import kotlin.test.assertFails
 import kotlin.test.assertTrue
 
 /**
- * 極小シグナルランタイムのテスト（K2-1・`:webapp:jvmTest` で走る）。
+ * 極小シグナルランタイムのテスト（`jvmTest` がこのリポジトリで唯一のテスト実行の口）。
  *
  * 画面の多重実行（リスナの積み上がり・指 1 本に反応が 2 回出る）は**この核のバグ**なので、
- * DOM に触れないここで緑を出す（判断 D-12）。
+ * DOM に触れないここで緑を出す（`docs/kb-wasm-bridge.md` §B-9）。
  */
 class SignalTest {
     /** 作った瞬間に 1 回走り、依存が変わるたびに走り直す。 */
@@ -54,7 +54,7 @@ class SignalTest {
         assertEquals(listOf(6, 10), seen)
     }
 
-    /** `dispose` のあとは走り直さない（**画面を離れた派生が依存を握り続けない**・判断 D-120）。 */
+    /** `dispose` のあとは走り直さない（**画面を離れた派生が依存を握り続けない**・`docs/kb-wasm-bridge.md` §B-12）。 */
     @Test
     fun derivedStopsFollowingAfterDispose() {
         val width = signalOf(3)
@@ -204,7 +204,7 @@ class SignalTest {
     }
 
     /**
-     * **自分で読んだ signal を書く effect** は無限に走らず、例外で止まる（判断 D-119）。
+     * **自分で読んだ signal を書く effect** は無限に走らず、例外で止まる（`docs/kb-wasm-bridge.md` §B-10）。
      *
      * 守れていないと書き込みが次の走り直しを**自分のスタックフレームの内側**で呼ぶので、
      * 走り直し続けるたびに段が伸びてブラウザのタブが固まる（`claimFlush` は同じ流れの

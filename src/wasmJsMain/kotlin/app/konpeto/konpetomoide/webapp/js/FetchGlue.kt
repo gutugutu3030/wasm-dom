@@ -7,10 +7,9 @@ import kotlin.js.JsAny
 /*
  * `fetch` の宣言（**probe 専用**・K1-5）。
  *
- * 新アプリには**サーバが無い**ので、画面から fetch を発射することは原則無い（`local://` の注・
- * `doc/plan-kmp-local-rewrite.md` §5.2）。ここにあるのは**同梱アセットを読むためだけ**
- * （EXIF 向きの実測に使う `app/exif-orientation-6.jpg` は、ブラウザにデコードしてもらわないと
- * 作れない。`doc/kb-server-api.md`「EXIF 付き JPEG のテストファイルを作る」はサーバ側の手）
+ * 読む側に**サーバが無い**ので、画面から fetch を発射することは原則無い。
+ * ここにあるのは**同梱アセットを読むためだけ**（EXIF の実測に使う画像は、ブラウザに
+ * デコードしてもらわないと作れない ―― 実測口は読み手側が持っている）
  */
 
 /** `window.fetch`（`kotlinx-browser` は wasm 側で未宣言）。 */

@@ -15,7 +15,7 @@ import kotlin.js.JsArray
  * 1. **JS 配列を作る**（`@JsFun` が無いのでリテラルは書けないが、`JSON.parse("[]")` は通る・
  *    [jsJsonParse] の実測）。共有に出す `File` の並びと `new File([blob], …)` の `fileBits` がこれ
  * 2. **失敗の中身を見る待ち**（[awaitJs] は失敗を `null` に丸めるので、**キャンセルと失敗を分ける**
- *    場所では使えない。仕様 §8.3）
+ *    場所では使えない・`docs/kb-wasm-bridge.md` §B-2）
  * 3. **`DOMException.name` を引く**（wasm 側は `DOMException` を型として受けられない）
  */
 
@@ -48,7 +48,7 @@ class JsReject(
  *
  * [awaitJs] は失敗を `null` に丸めるので、**共有のキャンセル（`AbortError`）・クリップボードの
  * `NotAllowedError`・画像の `error`** のように「失敗の中身で挙動が変わる」場所ではこちらを使う
- * （仕様 §8.3）。`then` の 2 引数形だけ使う（`catch` は Kotlin の予約語）
+ * （`docs/kb-wasm-bridge.md` §B-2）。`then` の 2 引数形だけ使う（`catch` は Kotlin の予約語）
  *
  * @receiver 待つ Promise
  * @return 成功した値

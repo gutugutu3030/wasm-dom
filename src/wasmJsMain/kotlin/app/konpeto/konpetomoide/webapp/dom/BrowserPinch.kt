@@ -7,10 +7,11 @@ import kotlinx.browser.document
 import kotlinx.browser.window
 
 /*
- * ブラウザ自身のジェスチャを抑止する（K2-1・`web/src/editor/gestures.ts` の `blockBrowserPinch()` と同じ）。
+ * ブラウザ自身のジェスチャを抑止する。
  *
  * 編集画面のピンチ（2 本指）をブラウザのページズームに取られると、指の生データが
- * `pointercancel` で消える（`doc/kb-editor-gesture.md` の E-11 と同じ罠）。なので**起動時に 1 回**貼る。
+ * `pointercancel` で消える罠（ブラウザのズームに取られたら指の生データが読めない）。なので**起動時に
+ * 1 回**貼る。
  */
 
 /**
@@ -22,10 +23,10 @@ import kotlinx.browser.window
  *    `passive: true`** なので `{ passive: false }` を添えないと `preventDefault()` が黙られる
  *    （`kotlinx-browser` は boolean 形しか無いので `js/DomGlue.kt` に言い直した）
  * 2. **Safari 固有のページズーム**（`gesturestart` / `gesturechange` / `gestureend`）。受ける口が
- *    `document` なのも TS と同じ
+ *    受ける口は `document`
  *
  * 面にかける `touch-action: none` は画面側の仕事なのでここでは触らない（`touch-action` は
- * **ヒット経路の積**で効く・`doc/kb-editor-gesture.md`）。
+ * **ヒット経路の積**で効くので、要素ごとに効く場所と効かない場所が出る）。
  */
 fun blockBrowserPinch() {
     window.unsafeCast<OptionsEventTarget>().addEventListener(

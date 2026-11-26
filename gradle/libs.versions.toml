@@ -1,18 +1,20 @@
-# wasm-dom バージョンカタログ。**親 Konpetomoide の `gradle/libs.versions.toml` と二重管理**
-# （submodule 化の代償・`doc/plan-k5-1-wasm-dom-module.md` §5）。
+# wasm-dom バージョンカタログ（**このリポジトリ専用の 1 本**）。読む側（アプリ）にも別のカタログが
+# あるが、共有ではない。
 #
-# `kotlin` は親と**同じ値が命**。ズレると親の `:webapp` がリンクする stdlib とかみ合わず、
-# wasm の口の穴（`doc/kb-kmp-webview.md` §18 系）が静かに開く。
-# 突合を毎回手で確認しなくてもいい仕組みは**ロックファイル**：2 つのビルドが同じ
-# `gradle.lockfile` を STRICT で読むので、片方だけ版本を上げるとロックが ping-pong して
-# 落ちる。版本を動かすときは**親と子を同じタイミングで**（親のコミットで gitlink も上げる）。
+# ただし `kotlin` は**読む側と同じ値が命**。ここでビルドした klib を向こうのコンパイラが読むので、
+# 新しい Kotlin で作るとメタデータ版本で弾かれる。配給が Maven Local になったので**機械の突合は
+# 無い**（以前は 2 つのビルドが同じ `gradle.lockfile` を STRICT で読み、片方だけ上げると
+# ping-pong して落ちた）。上げる日は**両方を同じ日に**。
 #
-# 親にあってここに無いもの（serialization / ktor）は土台が引かない依存。足さない
+# interop の穴は版本が効く（同じコードでも Kotlin の版本で通る／通らないが変わる）ので、
+# 実測は `docs/kb-wasm-bridge.md` に残す
+#
+# 読む側にあってここに無いもの（serialization / ktor）は土台が引かない依存。足さない
 
 [versions]
 kotlin = "2.4.21"
 # wasm アプリの DOM / browser API 宣言。土台の公開 API が `HTMLElement` / `Blob` を返すので
-# `api` で出す（判断 D-96）
+# `api` で出す（`implementation` にすると読む側が型を見失う）
 kotlinx-browser = "0.5.0"
 spotless = "8.7.0"
 # 整形エンジンのピン。spotless の既定解決に任せず、上げたときに整形結果が静かに変わるのを防ぐ

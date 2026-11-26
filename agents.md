@@ -1,7 +1,8 @@
 # wasm-dom
 
 Kotlin/Wasm で**実 DOM とブラウザ API を触るための土台**。アプリ本体（画面・ドメイン・保存）は知らない。
-Konpetomoide の `:wasm-dom` として開発され、2026-11-26 に submodule 化のためここで `git init` した。
+Konpetomoide の `:wasm-dom` として開発し、2026-11-26 に**別リポジトリへ出した**（アプリは
+Maven Local 配給のライブラリとして引く）。
 
 | 置き場 | 役割 |
 | --- | --- |
@@ -9,53 +10,57 @@ Konpetomoide の `:wasm-dom` として開発され、2026-11-26 に submodule �
 | `src/wasmJsMain/…/async/` | 画面イベントから `suspend` を始める `launch`（`kotlinx-coroutines` は入れない） |
 | `src/wasmJsMain/…/dom/` | 要素の生成・スタイル・ピンチ・キーボード inset など実 DOM の操作 |
 | `src/wasmJsMain/…/js/` | ブラウザ API の橋（`kotlinx-browser` が宣言していないものを自分で宣言する） |
+| `docs/kb-wasm-bridge.md` | **橋の教訓**（`B-n` 番号）。ここでの発見はここに書く |
 
 # 境界（崩してはいけないもの）
 
-- **アプリ本体（`:shared`）を 1 回も呼ばない**。ドメイン・保存・`.konpe` を知らないから単体で立つ
-  （判断 D-95）。型を 1 個 import した瞬間にこのリポジトリは単体で読めなくなる
+- **アプリ本体（ドメイン / 保存 / `.konpe`）を 1 回も呼ばない**。それを知らないから単体で立つ。
+  型を 1 個 import した瞬間にこのリポジトリは単体で読めなくなる
 - **`kotlinx-serialization` を持ち込まない**。JSON をまたぎたいときは**生 JSON `String` を返す**
   （`ClipboardGlue.clipboardTypesJson` がその形）。encode / decode は呼ぶ側の仕事
-- **画面を持たない**。`#/probe` のような実測口はアプリ側（D-100）
+- **画面を持たない**。ブラウザで測る口（実測画面）は呼び出し側にある
 - **`binaries.executable()` を呼ばない**。wasm の実行ファイルを出すのはアプリ 1 個だけ
-- `internal` は Kotlin モジュール単位。アプリの `probe/` が 1 手ずつ測る橋
-  （`FileGlue` の `blobFromTypedArray` / `blobFromDataUrl` / `readAsDataUrl`）は `public` に開いてある
-  （D-102）。**開けるのは橋の関数だけ**で、`reactive/` の `internal` は閉じたまま
+- `internal` は Kotlin モジュール単位。呼び出し側の実測画面が 1 手ずつ測る橋
+  （`FileGlue` の `blobFromTypedArray` / `blobFromDataUrl` / `readAsDataUrl`）は `public` に開いてある。
+  **開けるのは橋の関数だけ**で、`reactive/` の `internal` は閉じたまま
 
-# 親との関係（移行中・ここが一番の落とし穴）
+# アプリ（Konpetomoide）との関係（疎結合）
 
-親 Konpetomoide はまだ `include(":wasm-dom")` している。**同じ `build.gradle.kts` を 2 つのビルドが読む**。
+アプリ本体は **Maven Local 配給のライブラリ**としてここを引く
+（`app.konpeto.konpetomoide:wasm-dom`・`mavenLocal()` 経由）。**リポジトリは別**で、相互参照しない。
 
-| やりたいこと | 親から | ここで（単体） |
-| --- | --- | --- |
-| 整形 | `./gradlew :wasm-dom:spotlessApply` | `./gradlew spotlessApply` |
-| ビルド + テスト | `./gradlew :wasm-dom:build` | `./gradlew build` |
-| ロック再生成 | `./gradlew :wasm-dom:build --write-locks` | `./gradlew build --write-locks` |
-| OSV 監査 | `./gradlew audit`（ルートがツリー全体を再帰） | `./gradlew audit`（ここだけ） |
-| 配給 | ―― | `./gradlew publishToMavenLocal`（下の「配給」） |
+| やりたいこと | コマンド（ここで打つ） |
+| --- | --- |
+| 整形 | `./gradlew spotlessApply` |
+| ビルド + テスト | `./gradlew build` |
+| ロック再生成 | `./gradlew build --write-locks` |
+| OSV 監査 | `./gradlew audit`（**このリポジトリの CI が走る唯一の網**） |
+| 配給 | `./gradlew publishToMavenLocal`（下の「配給」） |
 
-- **`rootProject.extra` は読まない**（親の外では読めないので `Cannot get property … on extra
-  properties extension` で落ちる）。ktlint のルール値は `build.gradle.kts` に自前で持つ
-  → **揃える箇所は 3 つ**: ここ / `.editorconfig` / 親の `build.gradle.kts`
-- 版本カタログ（`gradle/libs.versions.toml`）も親と二重管理。**`kotlin` は親と同じ値が命**
-  （ズレるとアプリ本体がリンクする stdlib とかみ合わず、**新しい Kotlin で作られた klib は古い
-  コンパイラがメタデータ版本で弾く**）。いまは親が `include(":wasm-dom")` しているので
-  **同じ `gradle.lockfile` を読む＝ロックの ping-pong**が自動突合になる。座標で読む側に切り替わると
-  その網は消えるので、上げるなら**親と子を同じタイミングで**（下の「配給」）
-- 教訓の本文は**親の `doc/` にある**（`doc/kb-kmp-webview.md` §13〜§18 の wasm の口の穴、
-  `doc/kb-toolchain.md` の整形と監査、`doc/plan-k5-1-wasm-dom-module.md` の切り出し判断）。
-  **このリポジトリの外なので、単体で読んだときには見えない**。ここに書いた番号（D-xx）は親の
-  `doc/PROGRESS.md` の判断番号
+- **教訓は `docs/kb-wasm-bridge.md` に書く**（番号 `B-n`・append-only）。見分け方は主語が
+  external 宣言 / `unsafeCast` / 待ち（Promise） / 皿 / 版本で、**アプリの型名も画面名も出ないか**
+- **アプリの使い方・画面・保存・用紙で決まったことはアプリ側に書く**（アプリのリポジトリの
+  `doc/kb-kmp-webview.md`）。**向こうの節番号（`§…`）も判断番号（`D-*`）も引かない** ――
+  必要なら「呼び出し側がそうしている」まで書く
+- 版本カタログ（`gradle/libs.versions.toml`）はアプリ側と**別ファイルの二重管理**。
+  **`kotlin` はアプリと同じ値が命** ―― ここでビルドされた klib はアプリのコンパイラが読むので、
+  **新しい Kotlin で作るとメタデータ版本で弾かれる**。アプリ側に CI は無いので**機械の突合は無い**。
+  上げる日は**両方を同じ日**に（下の「配給」）
 
 # フォーマット規則
 
 - コミット前に `./gradlew spotlessApply`。**効くルールは `build.gradle.kts` の `editorConfigOverride`**
   （spotless は `.editorconfig` を自動で読まない。`setEditorConfigPath` は全ファイルが
-  `NoClassDefFoundError` になったので不採用・親で実測）。`.editorconfig` は IDE / ktlint CLI 向けの
+  `NoClassDefFoundError` になったので不採用・実測）。`.editorconfig` は IDE / ktlint CLI 向けの
   同じ値を書いておくファイルなので、ルールを変えるときは**両方を揃える**
 - **`./gradlew clean build` を 1 回で叩かない**（spotless が ktlint の jar を置く `build/spotless-*` を
-  `clean` が消し、交互に `NoClassDefFoundError` になる・親で実測）。`clean` は単独で打つか
+  `clean` が消し、交互に `NoClassDefFoundError` になる・実測）。`clean` は単独で打つか
   `--rerun-tasks` を使う
+- **ディレクトリを移動・コピーしたら `.gradle` を消す。** 実行履歴
+  （`.gradle/*/executionHistory.bin`）に**移動前の絶対パス**が残っていて、spotless が
+  `Spotless error! All target files must be within the project dir` で落ちる（実測: アプリから
+  移したとき、居たはずの `…/Konpetomoide/wasm-dom/build.gradle.kts` が target として出てきた）。
+  `.gradle` は消しても再生成される（`build/` は消さなくてよい）
 - 式ボディは `fun f(): T =` の**後ろで改行する**（`ktlint_function_signature_body_expression_wrapping = always`）
 - 宣言に付かないコメントは `/* … */`。KDoc（`/** … */`）は宣言に付くものだけ。**宣言じゃない場所に
   KDoc を置くと ktlint `standard:kdoc` が弾く**（実測: `build.gradle.kts` の `kotlin { wasmJs { … } }` に
@@ -68,13 +73,12 @@ Konpetomoide の `:wasm-dom` として開発され、2026-11-26 に submodule �
 
 - 依存を上げたら `./gradlew build --write-locks`。ビルドツール（spotless / ktlint）のロックは
   `./gradlew dependencies --configuration buildTooling --write-locks` で再生成する（`audit` が読む）
-- **`gradle.lockfile` は親ビルドと 1 個のファイルを共有する**（親は `:wasm-dom` として、ここはルート
-  として読む）。だから**版本を親からズラすとロックが ping-pong してどちらかが落ちる** ―― これが
-  `kotlin` 版本の自動突合になっている（STRICT なので「ロックが無い」も素通ししない）。意図せずに
-  落ちたら、親と子のカタログの**同じ行を同じタイミングで**上げる
+- `gradle.lockfile` は**このリポジトリだけのもの**（アプリは publish された成果物を引くので、
+  アプリ側のロックには載らない）。STRICT なので「ロックが無い」も素通ししない
 - `audit` は `check` に絡げない（osv-scanner はネットワーク必須なので、絡げるとオフラインの
   `build` が止まる）。CI が明示的に 1 本走る。除外は `osv-scanner.toml` に**理由 + 期限**で書く。
-  入っている 3 件は logback の socket server 経由のみ（ktlint が引く）で、**親と同じ 3 件**を揃えて保つ
+  入っている 3 件は logback の socket server 経由のみ（ktlint が引く）で、**このリポジトリの使い方で
+  到達しない**から除外。読む側の監査は読む側の `osv-scanner.toml` が持つ（**ここは写さない**）
 - osv-scanner は `.gitignore` に従う。**`.gitignore` の `build` を消すと `build/js/yarn.lock`
   （Kotlin/JS が置く karma / webpack 系）まで洗って無関係な赤が出る**
 - ローカルに osv-scanner が無いと `audit` は日本語の案内で落ちる（macOS は `brew install osv-scanner`。
@@ -94,7 +98,7 @@ Konpetomoide の `:wasm-dom` として開発され、2026-11-26 に submodule �
   `./gradlew publishToMavenLocal` が出すのは 3 個:
   `wasm-dom`（ルート・`available-at` で下に飛ぶ）/ `wasm-dom-jvm`（jar）/ **`wasm-dom-wasm-js`（klib）**
 - **`api(libs.kotlinx.browser)` は公開でも効く**。publish された `.module` の
-  `wasmJsApiElements` に `kotlinx-browser` が載る（D-96）。`implementation` にすると読む側が
+  `wasmJsApiElements` に `kotlinx-browser` が載る。`implementation` にすると読む側が
   `HTMLElement` を見失うので動かさない
 - **初めての `publishToMavenLocal` は `--write-locks` が要る**。POM 書き換え（`rewritePomXml`）が
   `jvmRuntimeClasspath` / `wasmJsRuntimeClasspath` を解決しに行くが、**`build` では解決されない
@@ -103,15 +107,21 @@ Konpetomoide の `:wasm-dom` として開発され、2026-11-26 に submodule �
 - **配給先は Maven Local だけ**（`~/.m2/repository`）。リモートのリポジトリには出さない
   （`publish` は使わず `publishToMavenLocal` を使う）。読む側は `repositories { mavenLocal() }` を
   足して座標で引く
+- **成果物を張り替えるたびに読む側の `--write-locks` は要らない**（同じ版本ならロックは不変）。
+  **版本を上げた日だけ**両方（読む側の `libs.versions.toml` とロック）を触る
 
 # テストと CI
 
-- **`jvmTest` が唯一の緑の口**。`reactive/` の純 Kotlin をここで走らせる（D-12）
+- **`jvmTest` が唯一の緑の口**。`reactive/` の純 Kotlin をここで走らせる
 - **wasm のテストは走らない**（Karma + Chrome が要り、開発環境にヘッドレス Chrome が無い）。
   `wasmJs { browser { testTask { enabled = false } } }` を消すと `commonTest` が wasm 側でも走ろう
   として落ちる
-- 橋（`js/`）は単体で緑にできない。**アプリ側の `#/probe` で目視**が実測（親の受け入れ条件 V6）
-- CI は `.github/workflows/ci.yml`（`build` = spotlessCheck + `jvmTest`、`audit` = OSV 監査）
+- 橋（`js/`）は単体で緑にできない。**呼び出し側の実測画面で目視**が実測（ここは画面を持たない）
+- CI は `.github/workflows/ci.yml` 1 ジョブ（`build` = spotlessCheck + `jvmTest` → osv-scanner を
+  SHA-256 検証付きで `~/.local/bin` に置く → `audit` → `publishToMavenLocal`）。アプリ側リポジトリに
+  CI は無いので、**機械が走る依存監査はここが唯一**
+- **ランナーは `ubuntu-latest`**（`ubuntu-slim` は 1 core / 5 GB で `org.gradle.jvmargs=-Xmx3g` ＋
+  `kotlin.daemon.jvmargs=-Xmx2g` に載らない・実測）
 - **JDK は固定しない**。`jvmToolchain` を使わず `jvm { compilerOptions { jvmTarget = JVM_17 } }`
   で生成するバイトコードの目標だけ決める。動かす JDK は Gradle を起動した JDK に任せるので、
   CI はランナー既定の JDK（Java 17）で走り、手元の Java 27 でも同じ緑になる
@@ -140,7 +150,7 @@ Konpetomoide の `:wasm-dom` として開発され、2026-11-26 に submodule �
 - 橋の関数は「**どのブラウザ API を経由するか**」を書く（同じように見える処理で Safari / Chrome の
   挙動が違う口がここにある）
 - コメントは実装の繰り返しではなく、意図と役割を書く
-- **このリポジトリには画面が無い**ので、親にある UI 規則（ラベルの動詞化など）は適用しない
+- **このリポジトリには画面が無い**ので、UI の規則（ラベルの動詞化など）は適用しない
 
 # 設計規則
 
@@ -148,5 +158,5 @@ Konpetomoide の `:wasm-dom` として開発され、2026-11-26 に submodule �
 - 拡張関数と拡張プロパティの使い分けは、引数が必要か + 副作用があるか である
 - `try` / `catch` ではなく `runCatching` (`fold` / `orElseGet`) を使用すること
 - **`kotlinx-coroutines` は土台に入れない**（`async/Launch.kt` は `startCoroutine` 1 本。wasm は
-  単一スレッドで dispatcher も job も要らない・D-8）。同時 / 取り消し / タイムアウトが要る日に
+  単一スレッドで dispatcher も job も要らない）。同時 / 取り消し / タイムアウトが要る日に
   入れるので、そのときは判断を残す
