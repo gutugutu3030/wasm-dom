@@ -1,0 +1,14 @@
+# Ignore Gradle のキャッシュと成果物
+.gradle
+build
+
+# Ignore Kotlin プラグインの作業データ
+.kotlin
+
+# Ignore Kotlin/Wasm ツールチェーンが置く作業ディレクトリ（`yarn.lock` が載ったら追跡に
+# 切り替える ―― 依存の再現性のため。親と同じ方針）
+kotlin-js-store/
+
+# **`build` を消さないこと**。`./gradlew audit` は `osv-scanner scan source --recursive` で、
+# osv-scanner は `.gitignore` を従う（`--no-ignore` を付けるまで）。`build/` が見えると
+# Kotlin/JS が置いた `build/js/yarn.lock`（karma / webpack 系）まで洗って無関係な赤が出る

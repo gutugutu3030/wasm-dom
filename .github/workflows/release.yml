@@ -1,0 +1,125 @@
+# main へのマージを起点に、セマンティックバージョニングで採番し、
+# gradle.properties を更新して、次回リリースのドラフトを維持する。
+# Publish（タグ作成）は人が GitHub の Releases 画面から行う。
+# 手順と約束: `agents.md`「リリース」
+#
+# **このリポジトリは成果物を配らない**（`maven-publish` を入れていない）。読む側は
+# submodule の gitlink / `includeBuild` でコミットを固定するので、Release は
+# 「どのコミットがどの版か」という changelog とタグだけを作る。
+name: Release
+
+on:
+  push:
+    branches: [main]
+
+# GITHUB_TOKEN の権限は最小化。
+#   contents: write      … gradle.properties の bump を main に push し、Release ドラフトを作る
+#   pull-requests: read  … マージされた PR のラベルとタイトルを採番・changelog に使う
+permissions:
+  contents: write
+  pull-requests: read
+
+# 立て続けにマージされたとき、採番（main への push）同士を衝突させないために直列化する。
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  bump-and-draft:
+    name: 採番してドラフト Release を維持
+    # 採番は GitHub API があれば足りる。macOS ランナー（約 10 倍の分を消費）は使わない。
+    runs-on: ubuntu-slim
+    timeout-minutes: 5
+    steps:
+      # bump 対象の gradle.properties を読むための最小チェックアウト。
+      # 過去リリースの解決は Release Drafter が API 側で行うためフルヒストリは不要。
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 1
+
+      # 1. 次のバージョンを解決するだけ。Release への書き込みは行わない。
+      - name: Resolve next version (dry-run)
+        id: resolve
+        uses: release-drafter/release-drafter@v7
+        with:
+          dry-run: true
+
+      # 2. 採番してよいかの審査。
+      #    解決できない（対象 PR ゼロ / 基準 Release 無し）… 以後のステップをスキップ
+      #    解決版 == gradle.properties の現値           … bump しない（ドラフト更新のみ）
+      #    解決版 <  現値                                 … ダウングレードなので失敗
+      #    解決版が厳密 semver でない                     … 失敗（Release Drafter が前のタグを
+      #      解析できなくなり、以後の採番が全部壊れる）
+      - name: Validate resolved version
+        id: gate
+        env:
+          RESOLVED: ${{ steps.resolve.outputs.resolved_version }}
+        run: |
+          set -euo pipefail
+          CURRENT="$(sed -n 's/^version=//p' gradle.properties | tr -d '[:space:]')"
+          echo "gradle.properties の現在値: ${CURRENT}"
+          echo "Release Drafter の解決結果: ${RESOLVED:-"(なし)"}"
+
+          if [ -z "${RESOLVED}" ]; then
+            echo "採番対象の PR が無いか、基準となる published Release がありません。何もしません。"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "skip=false" >> "$GITHUB_OUTPUT"
+
+          STRICT_SEMVER='^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'
+          for value in "${CURRENT}" "${RESOLVED}"; do
+            if ! [[ "${value}" =~ ${STRICT_SEMVER} ]]; then
+              echo "::error::厳密な semver (MAJOR.MINOR.PATCH・先頭ゼロ無し) ではありません: ${value}"
+              exit 1
+            fi
+          done
+          echo "version=${RESOLVED}" >> "$GITHUB_OUTPUT"
+
+          # 大小は `sort -V` に任せる（各パート 2 桁まで、という上限は無い。Android の
+          # versionCode を持つプロジェクトと違い、ここではバイトコードを配るだけなので
+          # 1.10.0 のような値を素直に許す）
+          if [ "${CURRENT}" = "${RESOLVED}" ]; then
+            echo "バージョンは現状維持です（gradle.properties は更新しません）"
+            echo "bump=false" >> "$GITHUB_OUTPUT"
+          elif [ "$(printf '%s\n%s\n' "${CURRENT}" "${RESOLVED}" | sort -V | head -n1)" = "${CURRENT}" ]; then
+            echo "bump=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::error::解決された ${RESOLVED} は gradle.properties の ${CURRENT} より古いバージョンです。published Release のタグ（v1.0.0 等）と gradle.properties を確認してください。"
+            exit 1
+          fi
+
+      # 3. gradle.properties を書き換えて main に push する。
+      #    GITHUB_TOKEN による push なので、この push で本ワークフローは再発火しない。
+      - name: Bump gradle.properties
+        if: steps.gate.outputs.bump == 'true'
+        id: bump
+        env:
+          VERSION: ${{ steps.gate.outputs.version }}
+        run: |
+          set -euo pipefail
+          sed -i "s/^version=.*/version=${VERSION}/" gradle.properties
+          if git diff --quiet -- gradle.properties; then
+            echo "差分がありません。bump commit は作りません。"
+          else
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add gradle.properties
+            # [skip ci] は保険。将来 PAT に替えたらこのガードが必須になる。
+            git commit -m "chore(release): v${VERSION} [skip ci]"
+            # actions/checkout は detached HEAD なので、ブランチ名を指定して push する。
+            git push origin "HEAD:refs/heads/main"
+          fi
+          # ドラフトのタグ先は、バージョンを書いた最新の main。
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      # 4. ドラフトを作成 / 更新する。公開は人が行う（人の Publish でタグが切られる）。
+      #    commitish を SHA で明示するのは、3 の bump commit をタグ先に含めるため。
+      - name: Update release draft
+        if: steps.gate.outputs.skip == 'false'
+        uses: release-drafter/release-drafter@v7
+        with:
+          publish: false
+          version: ${{ steps.gate.outputs.version }}
+          commitish: ${{ steps.bump.outputs.sha || github.sha }}

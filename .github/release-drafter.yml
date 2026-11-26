@@ -1,0 +1,86 @@
+# GitHub Release のリリースノートと次回バージョンの判定規則（Release Drafter v7）。
+#
+# 読み込み元はデフォルトブランチ（main）上のこのファイル。機能ブランチで編集しても
+# main に落ちるまで効かないため、設定変更も必ず PR で main へ入れる。
+# 手順と約束: agents.md「リリース」
+
+# タグ名とリリース名は解決されたバージョンから作る。
+name-template: 'v$RESOLVED_VERSION'
+tag-template: 'v$RESOLVED_VERSION'
+
+# semver ラベルの自動付与。PR のブランチ名だけを見る。
+# autolabeler の matcher（files / branch / title / body）は OR 判定で、
+# 「変更ファイルが全て *.md のみ」のような AND 条件は書けない。
+# そのためドキュメント除外は docs ブランチ運用に任せ、人とズレたときは
+# 手でラベルを付け替える（sync-labels を有効にすると人の判断が消えるので使わない）。
+autolabeler:
+  # ドキュメント専用ブランチは採番対象から外す
+  - labels: ['skip-changelog']
+    branch:
+      - '/docs?/.+'
+    stop-on-match: true
+  # 修正・維持作業は patch
+  - labels: ['semver:patch']
+    branch:
+      - '/fix/.+'
+      - '/hotfix/.+'
+      - '/chore/.+'
+      - '/ci/.+'
+      - '/deps/.+'
+      - '/build/.+'
+      - '/refactor/.+'
+      - '/test/.+'
+    stop-on-match: true
+  # 機能追加は minor
+  - labels: ['semver:minor']
+    branch:
+      - '/feature/.+'
+      - '/feat/.+'
+    stop-on-match: true
+  # 意図的な fallback なし: ラベル漏れは check-pr の警告で見せる
+  # （採番自体は下記の when 無しカテゴリで patch になり、マージは止まらない）
+
+# 採番ルール。対象範囲（最後に published された Release のタグ → HEAD）で
+# semver-increment の最高値が勝つ（major > minor > patch）。
+categories:
+  # バージョンを上げたくない PR は changelog と採番の両方から外す
+  - type: 'pre-exclude'
+    when:
+      label: 'skip-changelog'
+  - type: 'version-resolver'
+    semver-increment: 'major'
+    when:
+      label: 'semver:major'
+  - type: 'version-resolver'
+    semver-increment: 'minor'
+    when:
+      label: 'semver:minor'
+  - type: 'version-resolver'
+    semver-increment: 'patch'
+    when:
+      label: 'semver:patch'
+  # ラベル漏れのときのフォールバック（when 無しは最後の受け皿）
+  - type: 'version-resolver'
+    semver-increment: 'patch'
+  # ↓ changelog の見出し（採番の根拠と同じラベルで分ける）
+  - title: '💥 Breaking Changes'
+    when:
+      label: 'semver:major'
+  - title: '🚀 Features'
+    when:
+      label: 'semver:minor'
+  - title: '🐛 Bug Fixes'
+    when:
+      label: 'semver:patch'
+
+change-template: '- $TITLE (#$NUMBER)'
+change-title-escapes: '\<*_&'
+
+template: |
+  ## 変更
+
+  $CHANGES
+
+  ---
+  このドラフトは main へのマージごとに自動更新されます（Publish するまでバージョンは動き続ける）。
+  Publish すると、このドラフトが指すコミットにタグが切られます。

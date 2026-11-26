@@ -1,0 +1,68 @@
+# push / PR ごとに走る基本チェック: 整形 + ビルド（`jvmTest`）+ 依存の OSV 監査。
+#
+# **JDK は立てない**（`actions/setup-java` を置かない）。`build.gradle.kts` が `jvmToolchain` を
+# 使わず `JvmTarget.JVM_17`（生成するバイトコードの目標）だけ決めているので、Gradle を起動する
+# JDK はランナー既定でよい。ubuntu ランナーの既定 Java（17）でも手元の Java 27 でも同じ緑になる。
+#
+# private リポジトリの無料枠はブランチ保護が使えないので、これは「赤を見せる」チェックどまり。
+# 合并を止めるのが必要になったら branch protection で `build` を必須にする
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+# 立て続けに push されたら古い run を止める（マージ後の main は直列で残したいので cancel しない）
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  build:
+    name: 整形 + ビルド + OSV 監査
+    # `ubuntu-slim`（1 core / 5 GB）は分あたり 4 倍安いが、`gradle.properties` が
+    # Gradle 3 GB + Kotlin daemon 2 GB を確保しにいくので載らない。Gradle と wasm
+    # ツールチェーンのダウンロードも絡むため標準画像にする
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      # 依存とビルドのキャッシュ + wrapper の正当性検証。`build` のあと `audit` にも効く
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v6
+
+      # `build` は `check` を含むので **spotlessCheck（整形）と `jvmTest`（`reactive/` の純 Kotlin）**
+      # がまとめて走る。`clean` は絡めない ―― spotless が置く `build/spotless-*` を消して
+      # `NoClassDefFoundError` を踏む（`agents.md`「フォーマット規則」）
+      - name: Build
+        run: ./gradlew build --stacktrace
+
+      # osv-scanner は `./gradlew audit` が呼ぶ外部コマンド（`check` には絡げていない・
+      # ネットワーク必須だから）。`~/.local/bin` は audit タスクが候補に見に行く場所なので
+      # PATH に足さなくてよい
+      - name: Install osv-scanner
+        env:
+          # ローカル（Homebrew）と同じ版本に保つ。上げるときは上の URL と SHA256 を
+          # `osv-scanner_SHA256SUMS` から差し替える
+          OSV_VERSION: v2.7.1
+          OSV_SHA256: fb7dab19a8bd9bbe5c3189f09d4b7ee1820c9553a23bac202648a56efd2f6ee8
+        run: |
+          set -euo pipefail
+          curl -fsSL -o "$RUNNER_TEMP/osv-scanner" \
+            "https://github.com/google/osv-scanner/releases/download/${OSV_VERSION}/osv-scanner_linux_amd64"
+          echo "${OSV_SHA256}  ${RUNNER_TEMP}/osv-scanner" | sha256sum -c -
+          mkdir -p "$HOME/.local/bin"
+          install -m 0755 "$RUNNER_TEMP/osv-scanner" "$HOME/.local/bin/osv-scanner"
+          "$HOME/.local/bin/osv-scanner" --version
+
+      # `gradle.lockfile`（モジュール分 + ビルドツール分）を OSV と突き合わせる。
+      # 脆弱性が出たら非 0。**依存を上げたら `./gradlew build --write-locks` を忘れずに**
+      # ―― ロックがズレるとこのステップの前に `Build` が STRICT ロックで落ちる
+      - name: Audit dependencies
+        run: ./gradlew audit --stacktrace

@@ -1,0 +1,49 @@
+# OSV-Scanner 設定。呼び出しは `./gradlew audit`（`.github/workflows/ci.yml` の `audit` ジョブ）
+# 手順: `agents.md`「依存ロックと OSV 監査」
+#
+# ここに書くのは「出てよいと決めた件」だけ。出た件は必ず
+# **この土台の使い方で到達するのか**を確認してから除外する
+# （SBOM 起点の脆弱性報告は到達不能コードが大半という 2026 年の実測がある）。
+#
+# 除外は理由と期限を必須にする。期限を過ぎると再び報告されるので、
+# 除外リストが腐らずに「まだ生きている懸念」として残る。
+#
+# osv-scanner 2.7.1 は `ignoreUntil` を Deprecated（`effectiveUntil` へ移行）として warning を出す。
+# **親 Konpetomoide の `osv-scanner.toml` と同じキーを保つ**ためここではそのままにしている
+# （移行するときは親と子で同じコミットタイミングで揃える）
+#
+# --- 脆弱性 ID での除外（1 件ずつ） ---
+# [[IgnoredVulns]]
+# id = "GHSA-xxxx-xxxx-xxxx"
+# reason = "理由を書く"
+# ignoreUntil = 2027-01-31T00:00:00Z
+#
+# --- パッケージ単位の除外（その包の全脆弱性） ---
+# [[PackageIgnorances]]
+# [PackageIgnorances.package]
+# eco = "Maven"
+# name = "com.pinterest.ktlint:ktlint-cli"
+# reason = "理由を書く"
+# ignoreUntil = 2027-01-31T00:00:00Z
+
+# --- ビルドツール（整形）が引く logback-core ---
+# 親 Konpetomoide で最初に出た 3 件（2026-10-30）をそのまま持ってきた。
+# 共通点: **logback の直列化データ受信**系（`SimpleSocketServer` / `SimpleSSLSocketServer` に
+# 外部から直列化オブジェクトを送れたときだけ効く）。このリポジトリは logback の socket server を
+# 起動しない ―― 起動するのは Gradle / ktlint だけで、ktlint はローカルの `.kt` を解析するだけ。
+# fix は logback-core 1.5.25 / 1.5.33 / 1.5.34 だが、版本を決めているのは ktlint-cli 側なので
+# ここは除外で回す。親の同じファイル（`osv-scanner.toml`）と**同じ 3 件**を揃えて保つ
+[[IgnoredVulns]]
+id = "GHSA-jhq6-gfmj-v8fx"
+reason = "logback の socket server（HardenedObjectInputStream）経由のみ。本リポジトリは socket appender を起動しない。ビルド時の ktlint はローカル .kt のみ解析"
+ignoreUntil = 2027-01-31T00:00:00Z
+
+[[IgnoredVulns]]
+id = "GHSA-p47f-322f-whfh"
+reason = "同上（untrusted data の deserialization）。直列化データを受け取る経路が本リポジトリに無い"
+ignoreUntil = 2027-01-31T00:00:00Z
+
+[[IgnoredVulns]]
+id = "GHSA-qqpg-mvqg-649v"
+reason = "同上（クラスパス上のクラスをインスタンス化）。logback の受信チャネルを開設していないため到達不能"
+ignoreUntil = 2027-01-31T00:00:00Z

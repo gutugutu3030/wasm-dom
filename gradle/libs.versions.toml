@@ -1,0 +1,33 @@
+# wasm-dom バージョンカタログ。**親 Konpetomoide の `gradle/libs.versions.toml` と二重管理**
+# （submodule 化の代償・`doc/plan-k5-1-wasm-dom-module.md` §5）。
+#
+# `kotlin` は親と**同じ値が命**。ズレると親の `:webapp` がリンクする stdlib とかみ合わず、
+# wasm の口の穴（`doc/kb-kmp-webview.md` §18 系）が静かに開く。
+# 突合を毎回手で確認しなくてもいい仕組みは**ロックファイル**：2 つのビルドが同じ
+# `gradle.lockfile` を STRICT で読むので、片方だけ版本を上げるとロックが ping-pong して
+# 落ちる。版本を動かすときは**親と子を同じタイミングで**（親のコミットで gitlink も上げる）。
+#
+# 親にあってここに無いもの（serialization / ktor）は土台が引かない依存。足さない
+
+[versions]
+kotlin = "2.4.21"
+# wasm アプリの DOM / browser API 宣言。土台の公開 API が `HTMLElement` / `Blob` を返すので
+# `api` で出す（判断 D-96）
+kotlinx-browser = "0.5.0"
+spotless = "8.7.0"
+# 整形エンジンのピン。spotless の既定解決に任せず、上げたときに整形結果が静かに変わるのを防ぐ
+ktlint = "1.8.0"
+
+[libraries]
+kotlinx-browser = { module = "org.jetbrains.kotlinx:kotlinx-browser", version.ref = "kotlinx-browser" }
+kotlin-test = { module = "org.jetbrains.kotlin:kotlin-test", version.ref = "kotlin" }
+
+# --- ビルドツール（OSV 監査用）---
+# spotless は ktlint を実行時に独自解決して `gradle.lockfile` を通さないため、`./gradlew audit`
+# の網から外れる。同じ座標をここに置き、`buildTooling` 設定で解決してロックに載せる
+spotless-plugin-gradle = { module = "com.diffplug.spotless:spotless-plugin-gradle", version.ref = "spotless" }
+ktlint-cli = { module = "com.pinterest.ktlint:ktlint-cli", version.ref = "ktlint" }
+
+[plugins]
+kotlin-multiplatform = { id = "org.jetbrains.kotlin.multiplatform", version.ref = "kotlin" }
+spotless = { id = "com.diffplug.spotless", version.ref = "spotless" }

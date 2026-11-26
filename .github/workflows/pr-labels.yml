@@ -1,0 +1,52 @@
+# PR に semver ラベルを自動付与し、採番の根拠が揃っているかを検証する。
+# 判定規則本体は .github/release-drafter.yml（デフォルトブランチ上の設定を読む）。
+# 手順と約束: agents.md「リリース」
+
+name: PR Labels
+
+on:
+  pull_request:
+    # autolabeler が対応するイベント + ラベル付け替えにも反応させる。
+    types: [opened, reopened, synchronize, edited, labeled, unlabeled, ready_for_review]
+
+# default token は読み取りのみ。ラベル書き込みはジョブ単位で付与する。
+permissions:
+  contents: read
+
+jobs:
+  autolabel:
+    name: semver ラベルを自動付与
+    runs-on: ubuntu-slim
+    timeout-minutes: 5
+    # ジョブ単位の permissions は workflow レベルを「置き換え」る（加算ではない）。
+    # 未指定のスコープは none になるため、pull-requests: write だけ書くと contents が消え、
+    # release-drafter が既定ブランチの .github/release-drafter.yml を読めずに
+    # 「Resource not accessible by integration」で落ちる。contents: read を必ず併記する。
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      # ブランチ名から semver:patch / semver:minor / skip-changelog を付ける。
+      # 既に付いたラベルは消さない（人が上書きできる状態を保つ）。
+      - name: Autolabel
+        uses: release-drafter/release-drafter/autolabeler@v7
+
+  check:
+    name: 採番根拠の検証
+    runs-on: ubuntu-slim
+    timeout-minutes: 5
+    # 上の autolabel と同じ理由で、使うスコープをこのジョブでも明示する
+    # （release-drafter は config を contents API から読む）。
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      # PR が version-resolver / changelog の条件にマッチするかを検証する。
+      # 失敗すると赤い X（無料 + private はブランチ保護が使えないため必須チェックにできない）。
+      #
+      # 注意: check-pr はイベント payload のラベルを読むので、上の autolabel が
+      # 同じ run 内で付けたラベルはここから見えない。そのため opened 直後は
+      # 失敗表示が出ることがあるが、ラベル付与が起きる labeled イベントで再実行され
+      # 緑に戻る。設定ファイルの YAML / スキーマエラーもここで検出される。
+      - name: Check PR
+        uses: release-drafter/release-drafter/check-pr@v7
