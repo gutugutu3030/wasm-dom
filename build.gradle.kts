@@ -7,6 +7,11 @@ plugins {
     alias(libs.plugins.kotlin.multiplatform)
     // 整形（TL-1）。単体ビルドではここがルートなので、ルール値も自前で持つ
     alias(libs.plugins.spotless)
+    // **Maven Local に配る**ための公開（`./gradlew publishToMavenLocal`）。KMP はこのプラグインを
+    // 適用すると target ごとに publication を自動で作る（`wasm-dom` / `wasm-dom-jvm` /
+    // `wasm-dom-wasm-js`）。`group` と `version` は `gradle.properties` に置く
+    // （version は `.github/workflows/release.yml` が sed で更新する行）
+    id("maven-publish")
 }
 
 // ktlint のルール値。**親ビルドにいた頃はルートの `extra` から読んでいた**が、submodule は

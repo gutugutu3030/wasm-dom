@@ -50,12 +50,39 @@ dispose()                       // 画面を離れるとき（DOM リスナの�
 
 ## 読み方（ビルド）
 
-- **いま（親の中）**: 親の `settings.gradle.kts` が `include(":wasm-dom")`、アプリ側が
-  `implementation(project(":wasm-dom"))`
-- **単体リポジトリとして読む（Step 2・未実施）**: 読む側の `settings.gradle.kts` に
-  `includeBuild("wasm-dom")`。`group` を置いていないので座標は `wasm-dom:wasm-dom`
-  （`rootProject.name` から来る）。**`maven-publish` は入れていない** ―― 配給は composite と
-  submodule の gitlink で足りる前提
+**Maven Local に配って、座標で引く。**
+
+```bash
+./gradlew publishToMavenLocal    # → ~/.m2/repository/app/konpeto/konpetomoide/wasm-dom/0.1.0/
+```
+
+読む側（アプリ本体）は 2 箇所を書く:
+
+```kotlin
+// settings.gradle.kts
+dependencyResolutionManagement {
+    repositories {
+        mavenLocal() // ← 追加
+        google()
+        mavenCentral()
+    }
+}
+
+// webapp/build.gradle.kts
+wasmJsMain.dependencies {
+    implementation("app.konpeto.konpetomoide:wasm-dom:0.1.0")
+}
+```
+
+`publishToMavenLocal` が出すのは 3 個（KMP が target ごとに自動で作る）: `wasm-dom`（ルート・
+`available-at` で下に飛ぶ）/ `wasm-dom-jvm`（jar）/ **`wasm-dom-wasm-js`（klib）**。POM だけでなく
+Gradle Module Metadata（`.module`）も出る ―― **klib はそちらでしか解決できない**。
+
+**いまは親がまだ `include(":wasm-dom")` している**（未切替）。切るときは親の `settings.gradle.kts`
+から `include(":wasm-dom")` を消し、`webapp/build.gradle.kts` の
+`implementation(project(":wasm-dom"))` を座標に替えて、`./gradlew build --write-locks` を忘れない。
+初めての publish は `./gradlew publishToMavenLocal --write-locks` が要る（POM 書き換えが解決しに
+行く classpath がロックに無い・`agents.md`「配給」）。
 
 ## 手元で動かす
 
@@ -64,6 +91,7 @@ dispose()                       // 画面を離れるとき（DOM リスナの�
 ./gradlew spotlessApply    # 整形
 ./gradlew build --write-locks   # 依存を上げたらロック更新
 ./gradlew audit            # OSV-Scanner による依存の脆弱性スキャン
+./gradlew publishToMavenLocal   # Maven Local に配る（座標は上の「読み方」）
 ```
 
 必要なものは **JDK だけ**（`./gradlew` が Gradle 9.8.1 を落とす）。**toolchain は固定していない**
@@ -101,9 +129,10 @@ wasm のテストは Karma + Chrome が要り、開発環境にヘッドレス C
 ## リリース
 
 PR のブランチ名から semver ラベルを自動付与 → main マージで採番 + ドラフト Release 更新 →
-**Publish は人**（ここで初めてタグが切れる）。採番は `gradle.properties` の `version` に書きますが、
-**成果物は配らない**（`maven-publish` 無し）。読む側は submodule の gitlink / `includeBuild` で
-コミットを固定するので、Release は「どのコミットがどの版か」のタグと changelog だけを作ります。
+**Publish は人**（ここで初めてタグが切れる）。採番は `gradle.properties` の `version` に書き、
+**それが配給の版本そのもの**（`app.konpeto.konpetomoide:wasm-dom:<version>` を
+`publishToMavenLocal` で `~/.m2` に出す）。GitHub Release には成果物を載せず、「どのコミットが
+どの版か」を書くタグと changelog だけを作ります。
 
 ## 関連
 

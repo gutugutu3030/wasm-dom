@@ -1,4 +1,4 @@
-# push / PR ごとに走る基本チェック: 整形 + ビルド（`jvmTest`）+ 依存の OSV 監査。
+# push / PR ごとに走る基本チェック: 整形 + ビルド（`jvmTest`）+ 依存の OSV 監査 + 配給の口。
 #
 # **JDK は立てない**（`actions/setup-java` を置かない）。`build.gradle.kts` が `jvmToolchain` を
 # 使わず `JvmTarget.JVM_17`（生成するバイトコードの目標）だけ決めているので、Gradle を起動する
@@ -66,3 +66,10 @@ jobs:
       # ―― ロックがズレるとこのステップの前に `Build` が STRICT ロックで落ちる
       - name: Audit dependencies
         run: ./gradlew audit --stacktrace
+
+      # 配給の口が生きているか（POM と Gradle Module Metadata が作れるか）。
+      # **`build` では解決されない runtime classpath を POM 書き換えが解決しにいく**ので、
+      # ロックが足りないとここで初めて赤になる（そのときは `--write-locks` を 1 回打つ）。
+      # ランナーの `~/.m2` に書くだけで、どこにも配らない
+      - name: Publish to Maven Local
+        run: ./gradlew publishToMavenLocal --stacktrace

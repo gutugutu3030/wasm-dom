@@ -3,9 +3,9 @@
 # Publish（タグ作成）は人が GitHub の Releases 画面から行う。
 # 手順と約束: `agents.md`「リリース」
 #
-# **このリポジトリは成果物を配らない**（`maven-publish` を入れていない）。読む側は
-# submodule の gitlink / `includeBuild` でコミットを固定するので、Release は
-# 「どのコミットがどの版か」という changelog とタグだけを作る。
+# **GitHub Release には成果物を載せない**。配給は `./gradlew publishToMavenLocal` でローカルの
+# `~/.m2` に出す（座標は `app.konpeto.konpetomoide:wasm-dom:<この gradle.properties の version>`）。
+# Release は「どのコミットがどの版か」を書くタグと changelog だけを作る。
 name: Release
 
 on:
