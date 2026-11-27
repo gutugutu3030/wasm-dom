@@ -146,6 +146,12 @@ Maven Local 配給のライブラリとして引く）。
 - PR → **ブランチ名から semver ラベルを自動付与**（`.github/workflows/pr-labels.yml` の autolabeler）
   → `check-pr` が採番根拠を検証 → main マージで採番 + ドラフト更新
   （`.github/workflows/release.yml`）→ **Publish は人**（ここで初めてタグが切れる）
+- **最初の 1 版だけは人が Release を手で作る**（title と tag を `v<gradle.properties の version>`、
+  Target: main、Publish）。基準になる published Release が無いと Release Drafter は `0.0.0` 起点の
+  patch 解決にしかならないので、`release.yml` のダウングレード検査（解決版 < 現値は失敗）が
+  **必ず赤くなる**（実測: `0.0.1` vs `0.1.0` で連続失敗・PR に `semver:minor` が付いていても同じ）。
+  タグが 1 個できれば以後は自動採番が回る。その最初の Publish が
+  `publish.yml`（GitHub Packages への初配給）も発火させる
 - 採番は `gradle.properties` の `version` に書く。**この値が配給の版本そのもの**
   （`app.konpeto.konpetomoide:wasm-dom:<version>` を `publishToMavenLocal` で出す）。
   タグ（`v` を付けた名前）とこの値は同じに保つ
