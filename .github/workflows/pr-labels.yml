@@ -1,5 +1,6 @@
 # PR に semver ラベルを自動付与し、採番の根拠が揃っているかを検証する。
-# 判定規則本体は .github/release-drafter.yml（デフォルトブランチ上の設定を読む）。
+# 判定規則本体は .github/release-drafter.yml（autolabeler の branch は正規表現リテラル
+# `/…/` で書く。閉じ `/` を忘れるとただの文字列比較に化けて二度と当たらない）。
 # 手順と約束: agents.md「リリース」
 
 name: PR Labels
@@ -25,14 +26,22 @@ jobs:
     permissions:
       contents: read
       pull-requests: write
+    outputs:
+      # この run で付けたラベル（カンマ区切り）。下の check が採番根拠として数える。
+      labels: ${{ steps.autolabel.outputs.labels }}
     steps:
       # ブランチ名から semver:patch / semver:minor / skip-changelog を付ける。
       # 既に付いたラベルは消さない（人が上書きできる状態を保つ）。
+      # 付けるラベルはリポジトリのラベルとして**先に作ってある**こと。存在しない名前は
+      # API が 422 を返してこのジョブが赤くなる（UI と違い API はラベルを作らない）。
       - name: Autolabel
+        id: autolabel
         uses: release-drafter/release-drafter/autolabeler@v7
 
   check:
     name: 採番根拠の検証
+    # autolabel が付けたラベルを数えたいので直列にする（並列だと間に合わない）。
+    needs: autolabel
     runs-on: ubuntu-slim
     timeout-minutes: 5
     # 上の autolabel と同じ理由で、使うスコープをこのジョブでも明示する
@@ -41,12 +50,52 @@ jobs:
       contents: read
       pull-requests: read
     steps:
-      # PR が version-resolver / changelog の条件にマッチするかを検証する。
-      # 失敗すると赤い X（無料 + private はブランチ保護が使えないため必須チェックにできない）。
-      #
-      # 注意: check-pr はイベント payload のラベルを読むので、上の autolabel が
-      # 同じ run 内で付けたラベルはここから見えない。そのため opened 直後は
-      # 失敗表示が出ることがあるが、ラベル付与が起きる labeled イベントで再実行され
-      # 緑に戻る。設定ファイルの YAML / スキーマエラーもここで検出される。
-      - name: Check PR
+      # 設定が壊れていたらラベルの話はできないので、先に release-drafter.yml を読ませる。
+      # base と PR head の両方のスナップショットを検証する（YAML / スキーマ）。
+      # ラベル snapshot の不一致で赤にしないため continue-on-error にし、**設定が読めなかった
+      # ときだけ**次のステップで赤くする: check-pr は config の読み込みに失敗すると labels
+      # output を出さない。読めていればラベル不一致でも output は出る（空なら skip 扱い）。
+      - name: Check PR（release-drafter.yml の妥当性）
+        id: check
+        continue-on-error: true
         uses: release-drafter/release-drafter/check-pr@v7
+      - name: 設定が読めないときだけ赤くする
+        if: steps.check.outputs.labels == ''
+        run: |
+          echo "::error::.github/release-drafter.yml が読めない / スキーマを通らない（上の Check PR のログに YAML とスキーマのエラーが出る）"
+          exit 1
+      # 採番根拠の有無をここで決める。
+      #
+      # なぜ check-pr に数えさせないか: check-pr は**イベント payload のラベル snapshot
+      # しか見ない**（上流 README 明記）ので、autolabeler が同じ run で付けたラベルが見えない。
+      # そのラベル付与が起こす labeled イベントは**新しい run を作らない**（GITHUB_TOKEN 起源の
+      # pull_request は opened / synchronize / reopened 以外 run にならない・GitHub の再帰防止）。
+      # だから「あとで labeled が走って緑に戻る」は起きない（実測: opened の赤が残った）。
+      #
+      # では payload を書き換えて check-pr に渡すか? → 無理。runner は**各 `uses:` ステップの
+      # 直前に event payload ファイルをメモリ上の github.event から書き戻す**（actions/runner の
+      # ActionRunner.RunAsync → ExecutionContext.WriteWebhookPayload）。塗り替えは成功しても
+      # check-pr に届かなかった（実測）。だからラベルの合否は `run:` の中に置く。
+      # 数える対象は「payload のラベル + autolabeler がこの run で選んだラベル」。
+      - name: 採番根拠のラベルが付いているか
+        env:
+          PAYLOAD_LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
+          AUTOLABELED: ${{ needs.autolabel.outputs.labels }}
+        run: |
+          given=$(jq -rn \
+            --argjson payload "${PAYLOAD_LABELS}" \
+            --arg autolabeled "$AUTOLABELED" \
+            '((($payload // []) + ($autolabeled | split(",") | map(select(. != "")))) | unique | .[])')
+          echo "payload=${PAYLOAD_LABELS} / autolabel=${AUTOLABELED:-（無し）}"
+          echo '採番根拠に数えるラベル:'
+          if [ -n "${given}" ]; then
+            echo "${given}" | sed 's/^/  - /'
+          else
+            echo '  - （無し）'
+          fi
+          if echo "${given}" | grep -Exq 'semver:(major|minor|patch)|skip-changelog'; then
+            echo '採番根拠あり'
+          else
+            echo "::error::採番根拠のラベルが無い。ブランチ名を fix/… feature/… docs/… のいずれかにするか、人が semver:major|minor|patch か skip-changelog を付けてください"
+            exit 1
+          fi

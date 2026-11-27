@@ -13,29 +13,28 @@ tag-template: 'v$RESOLVED_VERSION'
 # 「変更ファイルが全て *.md のみ」のような AND 条件は書けない。
 # そのためドキュメント除外は docs ブランチ運用に任せ、人とズレたときは
 # 手でラベルを付け替える（sync-labels を有効にすると人の判断が消えるので使わない）。
+#
+# branch / title / body は**正規表現リテラル**（先頭と末尾が `/`）で書く。
+# 末尾の `/` を忘れると release-drafter はそれを正規表現と見なさず、
+# **そのままの文字列を含むか**の比較に化ける（`/fix/.+` という文字列をブランチ名に
+# 探すので二度と当たらない・警告も出ない）。中の `/` は `\/` にエスケープする。
+# 照合は部分一致なので `^` と `$` を付ける（付けないと `feature/docs/…` が
+# docs 扱いになるなど、ブランチ名の途中でも当たり始める）。
 autolabeler:
   # ドキュメント専用ブランチは採番対象から外す
   - labels: ['skip-changelog']
     branch:
-      - '/docs?/.+'
+      - '/^docs?\/.+$/'
     stop-on-match: true
   # 修正・維持作業は patch
   - labels: ['semver:patch']
     branch:
-      - '/fix/.+'
-      - '/hotfix/.+'
-      - '/chore/.+'
-      - '/ci/.+'
-      - '/deps/.+'
-      - '/build/.+'
-      - '/refactor/.+'
-      - '/test/.+'
+      - '/^(fix|hotfix|chore|ci|deps|build|refactor|test)\/.+$/'
     stop-on-match: true
   # 機能追加は minor
   - labels: ['semver:minor']
     branch:
-      - '/feature/.+'
-      - '/feat/.+'
+      - '/^(feature|feat)\/.+$/'
     stop-on-match: true
   # 意図的な fallback なし: ラベル漏れは check-pr の警告で見せる
   # （採番自体は下記の when 無しカテゴリで patch になり、マージは止まらない）
