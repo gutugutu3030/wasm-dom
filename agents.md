@@ -11,6 +11,7 @@ Maven Local 配給のライブラリとして引く）。
 | `src/wasmJsMain/…/dom/` | 要素の生成・スタイル・ピンチ・キーボード inset など実 DOM の操作 |
 | `src/wasmJsMain/…/js/` | ブラウザ API の橋（`kotlinx-browser` が宣言していないものを自分で宣言する） |
 | `docs/kb-wasm-bridge.md` | **橋の教訓**（`B-n` 番号）。ここでの発見はここに書く |
+| `docs/github-packages.md` | **GitHub Packages 配給の運用**（認証情報の条件・ローテーション・落とし穴） |
 
 # 境界（崩してはいけないもの）
 
@@ -28,6 +29,7 @@ Maven Local 配給のライブラリとして引く）。
 
 アプリ本体は **Maven Local 配給のライブラリ**としてここを引く
 （`app.konpeto.konpetomoide:wasm-dom`・`mavenLocal()` 経由）。**リポジトリは別**で、相互参照しない。
+**機械をまたぐときだけ GitHub Packages** に上げる（下の「配給」と `docs/github-packages.md`）。
 
 | やりたいこと | コマンド（ここで打つ） |
 | --- | --- |
@@ -35,7 +37,8 @@ Maven Local 配給のライブラリとして引く）。
 | ビルド + テスト | `./gradlew build` |
 | ロック再生成 | `./gradlew build --write-locks` |
 | OSV 監査 | `./gradlew audit`（**このリポジトリの CI が走る唯一の網**） |
-| 配給 | `./gradlew publishToMavenLocal`（下の「配給」） |
+| 配給（同じマシン） | `./gradlew publishToMavenLocal`（下の「配給」） |
+| 配給（機械をまたぐ） | Release の Publish で CI が GitHub Packages へ配る（下の「配給」） |
 
 - **教訓は `docs/kb-wasm-bridge.md` に書く**（番号 `B-n`・append-only）。見分け方は主語が
   external 宣言 / `unsafeCast` / 待ち（Promise） / 皿 / 版本で、**アプリの型名も画面名も出ないか**
@@ -88,7 +91,7 @@ Maven Local 配給のライブラリとして引く）。
   `Unresolved reference 'mutableListOf'` / `'let'` / `'error'` を並べた（＝**stdlib が無い**顔をした
   コンパイルエラーで、コードは悪くない）。`./gradlew build --write-locks` を**走り切るまで**待って直す
 
-# 配給（Maven Local）
+# 配給（Maven Local + GitHub Packages）
 
 - 座標は **`app.konpeto.konpetomoide:wasm-dom:<version>`**。`group` と `version` は
   `gradle.properties` に置く（Gradle がそのまま `project.group` / `project.version` に読む）。
@@ -104,9 +107,17 @@ Maven Local 配給のライブラリとして引く）。
   `jvmRuntimeClasspath` / `wasmJsRuntimeClasspath` を解決しに行くが、**`build` では解決されない
   のでロックに無い**。STRICT なので「`Configuration ':jvmRuntimeClasspath' is locked but does not
   have lock state`」で落ちる → `./gradlew publishToMavenLocal --write-locks` を 1 回打つ
-- **配給先は Maven Local だけ**（`~/.m2/repository`）。リモートのリポジトリには出さない
-  （`publish` は使わず `publishToMavenLocal` を使う）。読む側は `repositories { mavenLocal() }` を
-  足して座標で引く
+- **配給は 2 系統**。同じマシンは Maven Local（`publishToMavenLocal`）、**機械をまたぐときだけ**
+  GitHub Packages（`publishAllPublicationsToGithubPackagesRepository`）。**公開は CI の
+  `GITHUB_TOKEN` だけ**（`.github/workflows/publish.yml`）で、personal access token に書き込み
+  権限を持たせない。読む側は **`read:packages` 単独の短期 classic PAT**（fine-grained は
+  GitHub Packages 非対応）。条件と運用・落とし穴は `docs/github-packages.md`
+- **GitHub Packages は公開パッケージでも匿名で引けない**（匿名読み取りは Container registry だけ）。
+  つまりこの配給は「自分の機械を結ぶ」もので、**見知らぬ他人に 1 手で引かせる配給ではない**。
+  その日が来たら Maven Central に**追加**する（B → C は安いが C → B は秘密を配る方向）
+- **Maven レジストリは repository-scoped 限定**。送り先が `OWNER/REPOSITORY` 形なのはそれで、
+  **リポジトリの移設・改名で配給 URL が壊れる**。KMP の 3 publication は `pom.url` で
+  1 リポジトリにまとめている（外すと `wasm-dom-wasm-js` の klib が別の場所へ飛ぶ）
 - **成果物を張り替えるたびに読む側の `--write-locks` は要らない**（同じ版本ならロックは不変）。
   **版本を上げた日だけ**両方（読む側の `libs.versions.toml` とロック）を触る
 
@@ -120,6 +131,10 @@ Maven Local 配給のライブラリとして引く）。
 - CI は `.github/workflows/ci.yml` 1 ジョブ（`build` = spotlessCheck + `jvmTest` → osv-scanner を
   SHA-256 検証付きで `~/.local/bin` に置く → `audit` → `publishToMavenLocal`）。アプリ側リポジトリに
   CI は無いので、**機械が走る依存監査はここが唯一**
+- 配給は別ワークフロー（`.github/workflows/publish.yml`）。**Release の Publish で発火**し、
+  タグと `gradle.properties` の `version` を突合してから GitHub Packages へ配る。
+  `permissions: packages: write` の `GITHUB_TOKEN` を使うので**このリポジトリの公開側に
+  長期の秘密は無い**。`ci.yml` には絡げない（`push` のたびに配ると版の意味が壊れる）
 - **ランナーは `ubuntu-latest`**（`ubuntu-slim` は 1 core / 5 GB で `org.gradle.jvmargs=-Xmx3g` ＋
   `kotlin.daemon.jvmargs=-Xmx2g` に載らない・実測）
 - **JDK は固定しない**。`jvmToolchain` を使わず `jvm { compilerOptions { jvmTarget = JVM_17 } }`
@@ -134,10 +149,11 @@ Maven Local 配給のライブラリとして引く）。
 - 採番は `gradle.properties` の `version` に書く。**この値が配給の版本そのもの**
   （`app.konpeto.konpetomoide:wasm-dom:<version>` を `publishToMavenLocal` で出す）。
   タグ（`v` を付けた名前）とこの値は同じに保つ
-- **GitHub Release には成果物を載せない。** 配給先は **ローカルの `~/.m2` だけ**
-  （`publishToMavenLocal`。リモートのリポジトリには出さない）。Release は「どのコミットが
-  どの版か」を書くタグと changelog の場所
-- 版を上げる手順: main に `version` を書いたコミットが落ちる → `./gradlew publishToMavenLocal`
+- **GitHub Release 自体に成果物は載せない。** Release は「どのコミットがどの版か」を書くタグと
+  changelog の場所。成果物は **Maven Local（手元）と GitHub Packages（Publish を合図に CI が
+  `GITHUB_TOKEN` で配る）** の 2 系統に出す
+- 版を上げる手順: main に `version` を書いたコミットが落ちる → **人が Publish**（タグが切れる）→
+  `publish.yml` が GitHub Packages へ配る → 同じマシンで読むなら `./gradlew publishToMavenLocal`
   → 読む側が座標の版本を上げて `--write-locks`
 - 判定規則本体は `.github/release-drafter.yml`。**デフォルトブランチ上の設定が読まれる**ので、
   設定変更も必ず PR で main に入れる（機能ブランチで編集しても効かない）

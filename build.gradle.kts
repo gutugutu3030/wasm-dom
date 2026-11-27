@@ -7,10 +7,11 @@ plugins {
     alias(libs.plugins.kotlin.multiplatform)
     // 整形（TL-1）。単体ビルドではここがルートなので、ルール値も自前で持つ
     alias(libs.plugins.spotless)
-    // **Maven Local に配る**ための公開（`./gradlew publishToMavenLocal`）。KMP はこのプラグインを
+    // 配給のための公開（Maven Local と GitHub Packages）。KMP はこのプラグインを
     // 適用すると target ごとに publication を自動で作る（`wasm-dom` / `wasm-dom-jvm` /
     // `wasm-dom-wasm-js`）。`group` と `version` は `gradle.properties` に置く
-    // （version は `.github/workflows/release.yml` が sed で更新する行）
+    // （version は `.github/workflows/release.yml` が sed で更新する行）。
+    // 送り先と認証情報の約束は下の「配給」と `docs/github-packages.md`
     id("maven-publish")
 }
 
@@ -214,4 +215,72 @@ kotlin {
             implementation(libs.kotlin.test)
         }
     }
+}
+
+// ============================================================================
+// 配給（Maven Local + GitHub Packages）
+// ============================================================================
+
+/*
+ * GitHub Packages の送り先リポジトリ。Maven レジストリは **repository-scoped 限定**
+ * （org / user にスコープした granular 権限を持たない）ので、URL が `OWNER/REPOSITORY` 形に
+ * なる。リポジトリを移設・改名すると配給 URL が壊れる層の制約。
+ *
+ * CI では `GITHUB_TOKEN` が立つリポジトリそのものに配る（`GITHUB_REPOSITORY` は Actions が
+ * 全ステップに注入する）。これで「ワークフローが立つ場所」と「配る先」が構造的にズレない
+ */
+val githubPackagesRepo = providers.environmentVariable("GITHUB_REPOSITORY")
+    .getOrElse("gutugutu3030/wasm-dom")
+
+/*
+ * 認証情報は**環境変数主体**。CI は `GITHUB_ACTOR` / `GITHUB_TOKEN`（Actions が全ステップに注入する
+ * ジョブ毎のエフェメラル）で足りるので、**公開側に長期の秘密を 1 本も作らない**。
+ * 手元で配るときの `-Pgpr.user` / `-Pgpr.key` は逃げ道（普段は要らない）
+ */
+val githubPackagesUser = providers.gradleProperty("gpr.user")
+    .orElse(providers.environmentVariable("GITHUB_ACTOR"))
+val githubPackagesToken = providers.gradleProperty("gpr.key")
+    .orElse(providers.environmentVariable("GITHUB_TOKEN"))
+
+publishing {
+    publications.withType<MavenPublication>().configureEach {
+        pom {
+            /*
+             * KMP が自動で作る 3 publication（`wasm-dom` / `-jvm` / `-wasm-js`）を
+             * **この 1 リポジトリにまとめる**。GitHub は POM の `<url>` で
+             * 「どのリポジトリに属するパッケージか」を突合する（公式ドキュメント）。
+             * ここを置かないと artifactId と同名のリポジトリを作りに行くので、
+             * `wasm-dom-wasm-js`（klib）が別の場所へ飛んで読む側が解決できなくなる
+             */
+            url.set("https://github.com/$githubPackagesRepo")
+        }
+    }
+
+    repositories {
+        maven {
+            name = "githubPackages"
+            url = uri("https://maven.pkg.github.com/$githubPackagesRepo")
+            credentials {
+                username = githubPackagesUser.orNull
+                password = githubPackagesToken.orNull
+            }
+        }
+    }
+}
+
+// `audit` と同じ流儀で「認証情報が無い」を 401 で終わらせない。次に打つコマンドまで日本語で出す。
+// 期限切れの朝に 401 だけ見ると「とりあえず無期限のトークンを作る」に流れやすく、
+// それがこの配給の一番の穴なので、案内をビルド側に出す
+val wantsGithubPackages = gradle.startParameter.taskNames.any { taskName ->
+    val name = taskName.substringAfterLast(':')
+    name == "publish" || name == "publishAllPublications" || name.endsWith("ToGithubPackagesRepository")
+}
+if (wantsGithubPackages && githubPackagesToken.orNull.isNullOrBlank()) {
+    throw GradleException(
+        "GitHub Packages への配給に認証情報がありません。CI は `GITHUB_TOKEN`" +
+            "（`permissions: packages: write`）で自動的に通ります。手元で配るなら " +
+            "`-Pgpr.key=<token>`（書き込み権限のあるもの）を付けるか、" +
+            "Keychain から注入してください（手順: docs/github-packages.md）。" +
+            "同じマシンで読むだけなら `./gradlew publishToMavenLocal` の方が速いです",
+    )
 }

@@ -92,6 +92,38 @@ Gradle Module Metadata（`.module`）も出る ―― **klib はそちらでし�
 `./gradlew publishToMavenLocal --write-locks` が要る（POM 書き換えが解決しに行く classpath が
 ロックに無い・`agents.md`「配給」）。
 
+### 機械をまたぐとき（GitHub Packages）
+
+`~/.m2` は同じマシンにしか無い。**機械をまたぐ**（ノート / デスクトップ / 未来の自分）のが
+GitHub Packages で、**Release を Publish した合図に CI が `GITHUB_TOKEN` で配る**
+（公開に personal access token は要らない）。
+
+```kotlin
+// 読む側の settings.gradle.kts
+dependencyResolutionManagement {
+    repositories {
+        mavenLocal()
+        google()
+        mavenCentral()
+        maven {
+            url = uri("https://maven.pkg.github.com/gutugutu3030/wasm-dom")
+            credentials {
+                username = providers.gradleProperty("gpr.user")
+                    .orElse(providers.environmentVariable("GITHUB_ACTOR")).orNull
+                password = providers.gradleProperty("gpr.key")
+                    .orElse(providers.environmentVariable("GPR_TOKEN")).orNull
+            }
+        }
+    }
+}
+```
+
+**GitHub Packages は公開パッケージでも匿名で引けない**ので、読む側にも
+`read:packages` だけの **classic PAT**（fine-grained は非対応）が要ります。この配給は
+「自分の機械を結ぶ」もの。**他人に 1 手で引かせる配給ではない** ――
+条件・トークン運用・落とし穴は
+**[`docs/github-packages.md`](docs/github-packages.md)** に書いてある。
+
 ## 手元で動かす
 
 ```bash
@@ -100,13 +132,15 @@ Gradle Module Metadata（`.module`）も出る ―― **klib はそちらでし�
 ./gradlew build --write-locks   # 依存を上げたらロック更新
 ./gradlew audit            # OSV-Scanner による依存の脆弱性スキャン
 ./gradlew publishToMavenLocal   # Maven Local に配る（座標は上の「読み方」）
+# GitHub Packages への配給は CI がやる（手元でやるなら docs/github-packages.md）
 ```
 
 必要なものは **JDK だけ**（`./gradlew` が Gradle 9.8.1 を落とす）。**toolchain は固定していない**
 ので、Gradle を起動した JDK でそのまま走ります（生成するバイトコードは JVM 17 目標。
 GitHub ランナー既定の Java 17 でも手元の Java 27 でも同じ緑）。
 
-**CI があります**（`.github/workflows/ci.yml` = `build` + `audit` + `publishToMavenLocal`）。
+**CI があります**（`.github/workflows/ci.yml` = `build` + `audit` + `publishToMavenLocal`、
+`.github/workflows/publish.yml` = Release の Publish を合図に GitHub Packages へ配る）。
 アプリ側リポジトリには CI が無いので、**機械が走る依存監査はここが唯一**です（アプリ側の
 `./gradlew audit` はアプリのロックだけを洗う分工 ―― ここは `--recursive` で自分のロックを洗う）。
 
@@ -132,14 +166,19 @@ wasm のテストは Karma + Chrome が要り、開発環境にヘッドレス C
   Kotlin/JS が置く `build/js/yarn.lock` まで洗って無関係な赤が出る
 - **教訓は `docs/kb-wasm-bridge.md` に書く**（番号 `B-n`・append-only）。**アプリ側の節番号（`§…`）も
   判断番号（`D-*`）も引かない** ―― 読み手の使い方・画面・保存で決まったことは読み手側に書く
+- **公開に personal access token を使わない。** GitHub Packages への配給は CI の `GITHUB_TOKEN`、
+  読む側は **`read:packages` 単独の短期 classic PAT**。この 3 条件（リポジトリ public /
+  `read:packages` 単独 / 公開は CI）が崩れると配給の危険度が段違いになる
+  （`docs/github-packages.md`）
 
 ## リリース
 
 PR のブランチ名から semver ラベルを自動付与 → main マージで採番 + ドラフト Release 更新 →
 **Publish は人**（ここで初めてタグが切れる）。採番は `gradle.properties` の `version` に書き、
-**それが配給の版本そのもの**（`app.konpeto.konpetomoide:wasm-dom:<version>` を
-`publishToMavenLocal` で `~/.m2` に出す）。GitHub Release には成果物を載せず、「どのコミットが
-どの版か」を書くタグと changelog だけを作ります。
+**それが配給の版本そのもの**（`app.konpeto.konpetomoide:wasm-dom:<version>`）。GitHub Release
+自体には成果物を載せず、「どのコミットがどの版か」を書くタグと changelog だけを作る。
+Publish を合図に `publish.yml` が GitHub Packages へ配り、同じマシンで読む分は
+`./gradlew publishToMavenLocal` で `~/.m2` に出す。
 
 ## 関連
 
@@ -147,6 +186,8 @@ PR のブランチ名から semver ラベルを自動付与 → main マージ�
   CI・リリースの手順）
 - **[`docs/kb-wasm-bridge.md`](docs/kb-wasm-bridge.md)** — 橋（`js/` / `dom/` / `reactive/`）を触るときの
   落とし穴。実測したらここに足す
+- **[`docs/github-packages.md`](docs/github-packages.md)** — GitHub Packages 配給の運用。トークンの
+  条件と期限、期限切れの朝の手順、401 と repository-scoped の落とし穴
 - **[Konpetomoide](https://github.com/gutugutu3030/Konpetomoide)** — この土台をライブラリとして引いて
   いるアプリ本体。**アプリ側の教訓と判断記録はそこの `doc/`**（このリポジトリから直接向こうの
   文書番号は引かない＝疎結合）

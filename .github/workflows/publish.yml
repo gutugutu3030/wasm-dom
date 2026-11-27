@@ -1,0 +1,63 @@
+# Release を Publish（人が GitHub の Releases 画面から行う）したとき、**そのタグのコミット**を
+# GitHub Packages へ配る。手順と約束: `docs/github-packages.md`
+#
+# **personal access token は使わない**。`GITHUB_TOKEN`（ジョブ毎のエフェメラル）に
+# `packages: write` を渡すだけで、このリポジトリのパッケージには書き込める。
+# 公開側に長期の秘密を 1 本も作らないのがこの設計 ―― 漏れてもこのジョブの存活時間しか効かない
+#
+# 読む側（アプリ本体）は自分のマシンに読み取り専用の personal access token (classic) を置く。
+# **GitHub Packages は公開パッケージでも匿名ダウンロードできない**（Container registry だけの
+# 特例）ので、読み手にも認証情報が要る。ここは「自分の複数マシンを結ぶ」配給で、
+# 見知らぬ他人に 1 手で引かせる配給ではない
+name: Publish
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+  packages: write
+
+# 配給は 1 版ずつ直列に。並行すると「同じ版を 2 回送り直す」事故の切り分けが面倒
+concurrency:
+  group: publish
+  cancel-in-progress: false
+
+jobs:
+  github-packages:
+    name: GitHub Packages へ配る
+    # `gradle.properties` が Gradle 3 GB + Kotlin daemon 2 GB を確保しにいくので
+    # `ubuntu-slim`（1 core / 5 GB）には載らない（`agents.md`「CI」）
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      # タグのコミットを配る。`release.yml` が bump commit を含めた SHA をドラフトの
+      # commitish に置いているので、ここで読む `version` が配る版本そのものになる
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.release.tag_name }}
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v6
+
+      # タグと `gradle.properties` の `version` がズレたまま配ると、「どのコミットがどの版か」が
+      # 配給の実体と食い違って以後の追跡が壊れる。送る前に突き合わせる
+      - name: Validate version against tag
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          set -euo pipefail
+          VERSION="$(sed -n 's/^version=//p' gradle.properties | tr -d '[:space:]')"
+          echo "tag=${TAG} / gradle.properties=${VERSION}"
+          if [ "v${VERSION}" != "${TAG}" ]; then
+            echo "::error::タグ ${TAG} と gradle.properties の ${VERSION} が合っていません（タグは v を付けた名前 = version の約束）"
+            exit 1
+          fi
+
+      # `GITHUB_ACTOR` / `GITHUB_TOKEN` / `GITHUB_REPOSITORY` は Actions が全ステップに注入する
+      # （`secrets.GITHUB_TOKEN` と同じ値）。ビルドスクリプトはこの 3 本を読んで送り先と
+      # 認証情報にするので、ここに `env:` を足す必要が無い
+      - name: Publish to GitHub Packages
+        run: ./gradlew publishAllPublicationsToGithubPackagesRepository --stacktrace
