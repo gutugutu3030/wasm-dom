@@ -226,15 +226,16 @@ kotlin {
  * （org / user にスコープした granular 権限を持たない）ので、URL が `OWNER/REPOSITORY` 形に
  * なる。リポジトリを移設・改名すると配給 URL が壊れる層の制約。
  *
- * CI では `GITHUB_TOKEN` が立つリポジトリそのものに配る（`GITHUB_REPOSITORY` は Actions が
- * 全ステップに注入する）。これで「ワークフローが立つ場所」と「配る先」が構造的にズレない
+ * CI では `GITHUB_TOKEN` が立つリポジトリそのものに配る（`GITHUB_REPOSITORY` は Actions の
+ * 既定環境変数）。これで「ワークフローが立つ場所」と「配る先」が構造的にズレない
  */
 val githubPackagesRepo = providers.environmentVariable("GITHUB_REPOSITORY")
     .getOrElse("gutugutu3030/wasm-dom")
 
 /*
- * 認証情報は**環境変数主体**。CI は `GITHUB_ACTOR` / `GITHUB_TOKEN`（Actions が全ステップに注入する
- * ジョブ毎のエフェメラル）で足りるので、**公開側に長期の秘密を 1 本も作らない**。
+ * 認証情報は**環境変数主体**。CI は `GITHUB_ACTOR`（既定環境変数）と `GITHUB_TOKEN`
+ * （`secrets.GITHUB_TOKEN` を `publish.yml` が step の `env:` に渡す。ジョブ毎のエフェメラル）
+ * で足りるので、**公開側に長期の秘密を 1 本も作らない**。
  * 手元で配るときの `-Pgpr.user` / `-Pgpr.key` は逃げ道（普段は要らない）
  */
 val githubPackagesUser = providers.gradleProperty("gpr.user")
@@ -277,8 +278,9 @@ val wantsGithubPackages = gradle.startParameter.taskNames.any { taskName ->
 }
 if (wantsGithubPackages && githubPackagesToken.orNull.isNullOrBlank()) {
     throw GradleException(
-        "GitHub Packages への配給に認証情報がありません。CI は `GITHUB_TOKEN`" +
-            "（`permissions: packages: write`）で自動的に通ります。手元で配るなら " +
+        "GitHub Packages への配給に認証情報がありません。CI は `publish.yml` が " +
+            "`secrets.GITHUB_TOKEN` を `env:` で渡して通ります（ワークフローに `permissions: " +
+            "packages: write` が必要）。手元で配るなら " +
             "`-Pgpr.key=<token>`（書き込み権限のあるもの）を付けるか、" +
             "Keychain から注入してください（手順: docs/github-packages.md）。" +
             "同じマシンで読むだけなら `./gradlew publishToMavenLocal` の方が速いです",

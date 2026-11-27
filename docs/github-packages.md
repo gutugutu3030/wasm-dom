@@ -34,8 +34,10 @@ Release を **Publish** した瞬間に `.github/workflows/publish.yml` が走�
   リポジトリのパッケージ書き込みを与える。**personal access token は要らない**
 - タグのコミットを checkout し、**タグと `gradle.properties` の `version` を突合**してから配る
   （ズレると「どのコミットがどの版か」が配給の実体と食い違う）
-- `GITHUB_ACTOR` / `GITHUB_TOKEN` / `GITHUB_REPOSITORY` は Actions が全ステップに注入するので、
-  シークレット登録も `env:` も要らない
+- `GITHUB_ACTOR` と `GITHUB_REPOSITORY` は Actions の**既定環境変数**なのでビルドからそのまま読める。
+  **`GITHUB_TOKEN` は既定環境変数ではなく secret**（`secrets` コンテキストにしか入らない）ので、
+  `publish.yml` が step の `env:` に明示的に渡している。**シークレットの登録はやはり不要**
+  （実行ごとに自動生成される `secrets.GITHUB_TOKEN`）
 
 ### 手元（原則やらない。CI が配ってくれない版を試すときだけ）
 
