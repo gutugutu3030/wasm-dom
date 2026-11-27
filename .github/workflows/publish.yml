@@ -56,8 +56,14 @@ jobs:
             exit 1
           fi
 
-      # `GITHUB_ACTOR` / `GITHUB_TOKEN` / `GITHUB_REPOSITORY` は Actions が全ステップに注入する
-      # （`secrets.GITHUB_TOKEN` と同じ値）。ビルドスクリプトはこの 3 本を読んで送り先と
-      # 認証情報にするので、ここに `env:` を足す必要が無い
+      # `GITHUB_ACTOR` と `GITHUB_REPOSITORY` は Actions の既定環境変数なのでそのまま読める。
+      # 一方 **`GITHUB_TOKEN` は既定環境変数ではなく secret**（`secrets` コンテキストにしか入らない）
+      # ので、ここで step の `env:` に明示的に渡す。渡さないとビルド側に認証情報が届かず、
+      # `build.gradle.kts` の案内で止まる（実測: v0.1.0 の Publish がこれで失敗した）。
+      # 値は実行ごとに生成されるジョブ毎のエフェメラル。`permissions: packages: write` が
+      # このリポジトリのパッケージ書き込みを効かせる
       - name: Publish to GitHub Packages
+        env:
+          GITHUB_ACTOR: ${{ github.actor }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: ./gradlew publishAllPublicationsToGithubPackagesRepository --stacktrace
