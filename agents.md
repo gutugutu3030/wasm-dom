@@ -144,7 +144,7 @@ Maven Local 配給のライブラリとして引く）。
 # リリース
 
 - PR → **ブランチ名から semver ラベルを自動付与**（`.github/workflows/pr-labels.yml` の autolabeler）
-  → `check-pr` が採番根拠を検証 → main マージで採番 + ドラフト更新
+  → 採番根拠の検証（同じ workflow の check ジョブ）→ main マージで採番 + ドラフト更新
   （`.github/workflows/release.yml`）→ **Publish は人**（ここで初めてタグが切れる）
 - **autolabeler の `branch` は正規表現リテラル `/…/`**（末尾の `/` が必須・中の `/` は `\/`）。
   閉じ `/` を忘れた `'/fix/.+'` は**その文字列を含むか**の比較に化け、**警告も出ず二度と当たらない**
@@ -153,13 +153,19 @@ Maven Local 配給のライブラリとして引く）。
 - **`semver:major|minor|patch` と `skip-changelog` はリポジトリのラベルとして先に作る**。
   API はラベルを作らないので、存在しない名前を付けに行った autolabel は 422 で赤くなる
   （UI で初めて付けるとそのときだけ成功して、CI が壊れる）
-- **`check-pr` はイベント payload のラベル snapshot しか見ない**（上流 README 明記）。そして
-  **GITHUB_TOKEN によるラベル付与は `labeled` の新しい run を作らない**（GitHub の再帰防止 ――
-  GITHUB_TOKEN 起源の `pull_request` は `opened` / `synchronize` / `reopened` 以外 run にならない）。
-  だから「opened で赤くなっても labeled で再実行されて緑に戻る」は**起きない**。実測: opened の赤が
-  人がラベルを触るまで残った。対策として `pr-labels.yml` の check が payload を
-  「payload + autolabeler が選んだラベル（autolabel の output）」に**塗り替えて** check-pr へ渡す
-  （判定式をここに写さないため）。PAT でラベルを付ければ `labeled` は走るが、秘密の管理が増えるので不採用
+- **採番根拠の検証は `check-pr` に任せない**（`pr-labels.yml` の check が自分で数える）。理由は 2 つ
+  - `check-pr` は**イベント payload のラベル snapshot しか見ない**（上流 README 明記）。同じ run の
+    autolabeler が付けたラベルが見えない。しかもそのラベル付与が起こす `labeled` は**新しい run を
+    作らない**（GITHUB_TOKEN 起源の `pull_request` は `opened` / `synchronize` / `reopened` 以外 run
+    にならない・GitHub の再帰防止）→「あとで labeled が走って緑に戻る」が起きない（実測）
+  - **payload を書き換えて渡す芸も効かない**。runner は**各 `uses:` ステップの直前に event payload
+    ファイルをメモリ上の `github.event` から書き戻す**（actions/runner の `ActionRunner.RunAsync` →
+    `ExecutionContext.WriteWebhookPayload`）。`$GITHUB_EVENT_PATH` を塗り替えても action には届かない
+    （実測: 塗り替えは成功するのに `check-pr` はラベルを見ていない）
+  - よって check は「payload のラベル + autolabel の output」を `run:` の中で数え、`check-pr` には
+    **設定ファイルの妥当性**だけ見せる（`continue-on-error` + `labels` output が空のときだけ赤。
+    空 = config が読めない / スキーマを通らない。読めていればラベル不一致でも output は出る）。
+    PAT でラベルを付ければ `labeled` は走るが、秘密の管理が増えるので不採用
 - **最初の 1 版だけは人が Release を手で作る**（title と tag を `v<gradle.properties の version>`、
   Target: main、Publish）。基準になる published Release が無いと Release Drafter は `0.0.0` 起点の
   patch 解決にしかならないので、`release.yml` のダウングレード検査（解決版 < 現値は失敗）が
