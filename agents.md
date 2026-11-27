@@ -146,6 +146,20 @@ Maven Local 配給のライブラリとして引く）。
 - PR → **ブランチ名から semver ラベルを自動付与**（`.github/workflows/pr-labels.yml` の autolabeler）
   → `check-pr` が採番根拠を検証 → main マージで採番 + ドラフト更新
   （`.github/workflows/release.yml`）→ **Publish は人**（ここで初めてタグが切れる）
+- **autolabeler の `branch` は正規表現リテラル `/…/`**（末尾の `/` が必須・中の `/` は `\/`）。
+  閉じ `/` を忘れた `'/fix/.+'` は**その文字列を含むか**の比較に化け、**警告も出ず二度と当たらない**
+  （実測: PR を建ててもラベルが 1 枚も付かず、人が `semver:*` を付けていた）。照合は部分一致なので
+  `^` と `$` も付ける
+- **`semver:major|minor|patch` と `skip-changelog` はリポジトリのラベルとして先に作る**。
+  API はラベルを作らないので、存在しない名前を付けに行った autolabel は 422 で赤くなる
+  （UI で初めて付けるとそのときだけ成功して、CI が壊れる）
+- **`check-pr` はイベント payload のラベル snapshot しか見ない**（上流 README 明記）。そして
+  **GITHUB_TOKEN によるラベル付与は `labeled` の新しい run を作らない**（GitHub の再帰防止 ――
+  GITHUB_TOKEN 起源の `pull_request` は `opened` / `synchronize` / `reopened` 以外 run にならない）。
+  だから「opened で赤くなっても labeled で再実行されて緑に戻る」は**起きない**。実測: opened の赤が
+  人がラベルを触るまで残った。対策として `pr-labels.yml` の check が payload を
+  「payload + autolabeler が選んだラベル（autolabel の output）」に**塗り替えて** check-pr へ渡す
+  （判定式をここに写さないため）。PAT でラベルを付ければ `labeled` は走るが、秘密の管理が増えるので不採用
 - **最初の 1 版だけは人が Release を手で作る**（title と tag を `v<gradle.properties の version>`、
   Target: main、Publish）。基準になる published Release が無いと Release Drafter は `0.0.0` 起点の
   patch 解決にしかならないので、`release.yml` のダウングレード検査（解決版 < 現値は失敗）が
